@@ -16,15 +16,19 @@ An Android (non-root) app that lets you manage and display a **moon-sighting-bas
 - **Storage**: Room (month starts + year decisions) + DataStore (settings)
 - **Scheduling**: WorkManager (periodic “tick” for prompts + notification/widget updates)
 
-## Build / run
+## Build / run (Cursor/terminal friendly)
 
-This repo intentionally does **not** include the Gradle wrapper JAR (binary). From Android Studio, open the project and let it configure Gradle, or generate a wrapper locally:
+The repo includes the **Gradle wrapper**, so you can build without Android Studio:
 
 ```bash
-gradle wrapper
+./gradlew assembleDebug
 ```
 
-Then build normally.
+To install to a connected device:
+
+```bash
+./gradlew installDebug
+```
 
 ## How it works (MVP)
 
