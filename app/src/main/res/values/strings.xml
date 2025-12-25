@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">Biblical Month</string>
+
+    <string name="nav_today">Today</string>
+    <string name="nav_calendar">Calendar</string>
+    <string name="nav_settings">Settings</string>
+
+    <string name="notification_channel_status_name">Biblical Month Status</string>
+    <string name="notification_channel_prompts_name">Biblical Month Prompts</string>
+
+    <string name="widget_title">Biblical Month</string>
+</resources>
+
