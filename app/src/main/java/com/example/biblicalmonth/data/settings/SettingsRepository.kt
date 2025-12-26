@@ -2,6 +2,7 @@ package com.example.biblicalmonth.data.settings
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -28,6 +29,11 @@ class SettingsRepository(private val context: Context) {
         val LAST_FEAST_REMINDER_EPOCH_DAY = longPreferencesKey("last_feast_reminder_epoch_day")
         val PROJECT_EXTRA_MONTH = booleanPreferencesKey("project_extra_month")
         val PROJECTED_MONTH_LENGTHS = stringPreferencesKey("projected_month_lengths") // JSON: {"year-month": "29" or "30"}
+        
+        // Cached location for widget use
+        val CACHED_LATITUDE = doublePreferencesKey("cached_latitude")
+        val CACHED_LONGITUDE = doublePreferencesKey("cached_longitude")
+        val CACHED_LOCATION_TIMESTAMP = longPreferencesKey("cached_location_timestamp")
     }
 
     val statusNotificationEnabled: Flow<Boolean> =
@@ -185,6 +191,41 @@ class SettingsRepository(private val context: Context) {
         } catch (e: Exception) {
             emptyMap()
         }
+    }
+
+    /**
+     * Cache location for widget use. Location is considered valid for 24 hours.
+     */
+    suspend fun cacheLocation(latitude: Double, longitude: Double) {
+        context.dataStore.edit {
+            it[Keys.CACHED_LATITUDE] = latitude
+            it[Keys.CACHED_LONGITUDE] = longitude
+            it[Keys.CACHED_LOCATION_TIMESTAMP] = System.currentTimeMillis()
+        }
+    }
+
+    /**
+     * Get cached location if it exists and is recent (within 24 hours).
+     * Returns null if no cached location or if it's stale.
+     */
+    suspend fun getCachedLocation(): Pair<Double, Double>? {
+        val prefs = context.dataStore.data.first()
+        val lat = prefs[Keys.CACHED_LATITUDE]
+        val lon = prefs[Keys.CACHED_LONGITUDE]
+        val timestamp = prefs[Keys.CACHED_LOCATION_TIMESTAMP]
+        
+        if (lat == null || lon == null || timestamp == null) {
+            return null
+        }
+        
+        // Check if location is recent (within 24 hours)
+        val ageMillis = System.currentTimeMillis() - timestamp
+        val ageHours = ageMillis / (1000 * 60 * 60)
+        if (ageHours > 24) {
+            return null // Location is stale
+        }
+        
+        return Pair(lat, lon)
     }
 }
 

@@ -79,6 +79,12 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setLocation(location: Location?) {
         currentLocation = location
+        // Cache location for widget use
+        if (location != null) {
+            viewModelScope.launch {
+                settings.cacheLocation(location.latitude, location.longitude)
+            }
+        }
         updateSunsetCountdown()
     }
 
@@ -98,7 +104,52 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
 
-            val today = repo.getToday()
+            // Calculate sunset and daytime dates FIRST to determine which Gregorian date to use
+            val location = currentLocation
+            val now = ZonedDateTime.now(ZoneId.systemDefault())
+            val todayDate = LocalDate.now()
+            val yesterdayDate = todayDate.minusDays(1)
+            
+            var daytimeDate: String? = null
+            var sunsetDate: String? = null
+            var isAfterSunset = false
+            var dateToUseForBiblical = todayDate // Default to today
+            
+            if (location != null) {
+                val zoneId = ZoneId.systemDefault()
+                val todaySunset = SunsetCalculator.calculateSunsetTime(todayDate, location.latitude, location.longitude, zoneId)
+                val yesterdaySunset = SunsetCalculator.calculateSunsetTime(yesterdayDate, location.latitude, location.longitude, zoneId)
+                
+                if (todaySunset != null) {
+                    isAfterSunset = now.isAfter(todaySunset)
+                    // Daytime date is always today (Gregorian date)
+                    daytimeDate = todayDate.toString()
+                    // Sunset date: if after today's sunset, use today, otherwise yesterday
+                    // (Biblical day starts at sunset, so before today's sunset = still yesterday's biblical day)
+                    sunsetDate = if (now.isAfter(todaySunset)) {
+                        todayDate.toString()
+                    } else {
+                        yesterdayDate.toString()
+                    }
+                    // Use sunset date for biblical date calculation
+                    dateToUseForBiblical = if (now.isAfter(todaySunset)) {
+                        todayDate
+                    } else {
+                        yesterdayDate
+                    }
+                } else {
+                    daytimeDate = todayDate.toString()
+                    sunsetDate = yesterdayDate.toString()
+                    dateToUseForBiblical = yesterdayDate
+                }
+            } else {
+                daytimeDate = todayDate.toString()
+                sunsetDate = yesterdayDate.toString()
+                dateToUseForBiblical = yesterdayDate
+            }
+
+            // Get biblical date using the appropriate Gregorian date (sunset date if after sunset)
+            val today = repo.resolveFor(dateToUseForBiblical)
             if (today == null) {
                 _state.value = _state.value.copy(
                     hasAnchor = true,
@@ -123,42 +174,6 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
                 else -> "${today.monthNumber}th"
             }
             val lunarLabel = "$dayOrdinal day of the $monthOrdinal month, ${today.yearNumber}"
-
-            // Calculate sunset and daytime dates
-            val location = currentLocation
-            val now = ZonedDateTime.now(ZoneId.systemDefault())
-            val todayDate = LocalDate.now()
-            val yesterdayDate = todayDate.minusDays(1)
-            
-            var daytimeDate: String? = null
-            var sunsetDate: String? = null
-            var isAfterSunset = false
-            
-            if (location != null) {
-                val zoneId = ZoneId.systemDefault()
-                val todaySunset = SunsetCalculator.calculateSunsetTime(todayDate, location.latitude, location.longitude, zoneId)
-                val yesterdaySunset = SunsetCalculator.calculateSunsetTime(yesterdayDate, location.latitude, location.longitude, zoneId)
-                
-                if (todaySunset != null) {
-                    isAfterSunset = now.isAfter(todaySunset)
-                    // Daytime date is today
-                    daytimeDate = todayDate.toString()
-                    // Sunset date: if after today's sunset, use today, otherwise yesterday
-                    sunsetDate = if (now.isAfter(todaySunset)) {
-                        todayDate.toString()
-                    } else if (yesterdaySunset != null && now.isAfter(yesterdaySunset)) {
-                        yesterdayDate.toString()
-                    } else {
-                        yesterdayDate.toString()
-                    }
-                } else {
-                    daytimeDate = todayDate.toString()
-                    sunsetDate = yesterdayDate.toString()
-                }
-            } else {
-                daytimeDate = todayDate.toString()
-                sunsetDate = yesterdayDate.toString()
-            }
 
             _state.value = _state.value.copy(
                 hasAnchor = true,

@@ -1,11 +1,15 @@
 package com.example.biblicalmonth.widgets
 
+import android.Manifest
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.Location
 import android.widget.RemoteViews
+import androidx.core.content.ContextCompat
 import com.example.biblicalmonth.R
 import com.example.biblicalmonth.data.LunarRepository
 import com.example.biblicalmonth.data.settings.SettingsRepository
@@ -50,10 +54,60 @@ class TodayWidgetProvider : AppWidgetProvider() {
         private fun updateAll(context: Context, mgr: AppWidgetManager, ids: IntArray) {
             if (ids.isEmpty()) return
 
-            val (lunarText, gregorianText, shabbatCountdown) = runBlocking {
+            // Get location and calculate everything on background thread
+            val result = runBlocking {
                 withContext(Dispatchers.IO) {
+                    // Try to get location from cache first (fast and reliable for widgets)
+                    val settings = SettingsRepository(context)
+                    val cachedLocation = try {
+                        settings.getCachedLocation()
+                    } catch (e: Exception) {
+                        null
+                    }
+                    
+                    val lat: Double
+                    val lon: Double
+                    
+                    if (cachedLocation != null) {
+                        lat = cachedLocation.first
+                        lon = cachedLocation.second
+                    } else {
+                        // Cache miss or stale - try to get fresh location
+                        val location = getLocationWithPermissions(context)
+                        if (location != null) {
+                            lat = location.latitude
+                            lon = location.longitude
+                            // Cache the fresh location for next time
+                            try {
+                                settings.cacheLocation(lat, lon)
+                            } catch (e: Exception) {
+                                // Ignore caching errors
+                            }
+                        } else {
+                            // Fallback to default coordinates
+                            lat = 40.0
+                            lon = -74.0
+                        }
+                    }
                     val repo = LunarRepository(context)
-                    val today = repo.getToday()
+                    
+                    // Calculate sunset dates FIRST to determine which Gregorian date to use
+                    val todayDate = LocalDate.now()
+                    val zoneId = ZoneId.systemDefault()
+                    
+                    val todaySunset = SunsetCalculator.calculateSunsetTime(todayDate, lat, lon, zoneId)
+                    val tomorrowSunset = SunsetCalculator.calculateSunsetTime(todayDate.plusDays(1), lat, lon, zoneId)
+                    
+                    val now = ZonedDateTime.now(zoneId)
+                    val isAfterTodaySunset = todaySunset != null && now.isAfter(todaySunset)
+                    
+                    // Determine which dates to show - sunset date is yesterday if before today's sunset, today if after
+                    val sunsetDate = if (isAfterTodaySunset) todayDate else todayDate.minusDays(1)
+                    val nextSunsetDate = if (isAfterTodaySunset) todayDate.plusDays(1) else todayDate
+                    
+                    // Use sunset date for biblical date calculation
+                    val dateToUseForBiblical = sunsetDate
+                    val today = repo.resolveFor(dateToUseForBiblical)
                     val lunarText = if (today == null) {
                         "Tap to set an anchor"
                     } else {
@@ -75,36 +129,6 @@ class TodayWidgetProvider : AppWidgetProvider() {
                         }
                         "$dayOrdinal Day of $monthOrdinal Month (${today.yearNumber})"
                     }
-                    // Calculate sunset dates for today and tomorrow
-                    val todayDate = LocalDate.now()
-                    val zoneId = ZoneId.systemDefault()
-                    
-                    // Get user's location
-                    val location = try {
-                        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
-                        val cancellationTokenSource = CancellationTokenSource()
-                        val locationTask = fusedLocationClient.getCurrentLocation(
-                            Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-                            cancellationTokenSource.token
-                        )
-                        Tasks.await(locationTask, 5, TimeUnit.SECONDS)
-                    } catch (e: Exception) {
-                        null
-                    }
-                    
-                    // Use actual location or fallback to default coordinates (40.0, -74.0)
-                    val latitude = location?.latitude ?: 40.0
-                    val longitude = location?.longitude ?: -74.0
-                    
-                    val todaySunset = SunsetCalculator.calculateSunsetTime(todayDate, latitude, longitude, zoneId)
-                    val tomorrowSunset = SunsetCalculator.calculateSunsetTime(todayDate.plusDays(1), latitude, longitude, zoneId)
-                    
-                    val now = ZonedDateTime.now(zoneId)
-                    val isAfterTodaySunset = todaySunset != null && now.isAfter(todaySunset)
-                    
-                    // Determine which dates to show - sunset date is yesterday if before today's sunset, today if after
-                    val sunsetDate = if (isAfterTodaySunset) todayDate else todayDate.minusDays(1)
-                    val nextSunsetDate = if (isAfterTodaySunset) todayDate.plusDays(1) else todayDate
                     
                     val gregorianText = if (todaySunset != null && tomorrowSunset != null) {
                         val format = DateTimeFormatter.ofPattern("M/d")
@@ -113,10 +137,16 @@ class TodayWidgetProvider : AppWidgetProvider() {
                         todayDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
                     }
                     
-                    // Shabbat countdown will be calculated later with location
-                    Triple(lunarText, gregorianText, "")
+                    // Return location along with text for use in Shabbat countdown
+                    data class Result(val lunar: String, val gregorian: String, val lat: Double, val lon: Double)
+                    Result(lunarText, gregorianText, lat, lon)
                 }
             }
+            
+            val lunarText = result.lunar
+            val gregorianText = result.gregorian
+            val latitude = result.lat
+            val longitude = result.lon
 
             val clickPi = PendingIntent.getActivity(
                 context,
@@ -125,20 +155,7 @@ class TodayWidgetProvider : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            // Get location once for all widget updates
-            val location = try {
-                val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
-                val cancellationTokenSource = CancellationTokenSource()
-                val locationTask = fusedLocationClient.getCurrentLocation(
-                    Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-                    cancellationTokenSource.token
-                )
-                Tasks.await(locationTask, 5, TimeUnit.SECONDS)
-            } catch (e: Exception) {
-                null
-            }
-            val latitude = location?.latitude ?: 40.0
-            val longitude = location?.longitude ?: -74.0
+            // Location already retrieved above in runBlocking block
             
             ids.forEach { id ->
                 // Check if it's currently Shabbat
@@ -242,6 +259,68 @@ class TodayWidgetProvider : AppWidgetProvider() {
                     "${days}d ${hours}h"
                 }
             }
+        }
+        
+        /**
+         * Get location with proper permission checks.
+         * Widgets run in a restricted context, so we need to check permissions first.
+         * Tries getCurrentLocation first, then falls back to lastKnownLocation.
+         */
+        private fun getLocationWithPermissions(context: Context): Location? {
+            // Check if location permissions are granted
+            val hasFineLocation = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            
+            val hasCoarseLocation = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            
+            if (!hasFineLocation && !hasCoarseLocation) {
+                return null
+            }
+            
+            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+            
+            // First, try to get current location
+            try {
+                val cancellationTokenSource = CancellationTokenSource()
+                val locationTask = fusedLocationClient.getCurrentLocation(
+                    Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                    cancellationTokenSource.token
+                )
+                // Increase timeout to 10 seconds for better chance of getting location
+                val location = Tasks.await(locationTask, 10, TimeUnit.SECONDS)
+                if (location != null) {
+                    return location
+                }
+            } catch (e: SecurityException) {
+                // Permission issue
+            } catch (e: Exception) {
+                // Ignore and try last known location
+            }
+            
+            // Fallback to last known location
+            try {
+                val lastLocationTask = fusedLocationClient.lastLocation
+                val lastLocation = Tasks.await(lastLocationTask, 2, TimeUnit.SECONDS)
+                if (lastLocation != null) {
+                    // Check if last location is recent (within 1 hour)
+                    val ageMillis = System.currentTimeMillis() - lastLocation.time
+                    val ageHours = ageMillis / (1000 * 60 * 60)
+                    if (ageHours < 1) {
+                        return lastLocation
+                    }
+                }
+            } catch (e: SecurityException) {
+                // Permission issue
+            } catch (e: Exception) {
+                // Ignore
+            }
+            
+            return null
         }
     }
 }
