@@ -2,11 +2,14 @@ package com.example.biblicalmonth.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -183,6 +186,9 @@ fun CalendarScreen(vm: CalendarViewModel = viewModel()) {
                                 Text(
                                     text = "Shabbat",
                                     style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Clip
                                 )
                             } else {
                                 Text(
@@ -198,64 +204,90 @@ fun CalendarScreen(vm: CalendarViewModel = viewModel()) {
                     }
                 }
 
-                // Calendar grid
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                // Calendar grid with lighter background box around the entire grid
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                        .padding(4.dp)
                 ) {
-                    state.weeks.forEach { week ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                        ) {
-                            week.forEach { cell ->
-                                if (cell == null) {
-                                    Spacer(Modifier.weight(1f).size(50.dp))
-                                } else {
-                                    // Check if this is a Shabbat day (Saturday) or a rest day during feasts
-                                    val isShabbat = cell.gregorianDate.dayOfWeek == DayOfWeek.SATURDAY
-                                    val isRestDay = cell.feastTitles.any { title ->
-                                        title.contains("Unleavened Bread begins", ignoreCase = true) ||
-                                        title.contains("Unleavened Bread ends", ignoreCase = true) ||
-                                        title.contains("Shavuot", ignoreCase = true) ||
-                                        title.contains("Trumpets", ignoreCase = true) ||
-                                        title.contains("Atonement", ignoreCase = true) ||
-                                        title.contains("Tabernacles begins", ignoreCase = true) ||
-                                        title.contains("Tabernacles ends", ignoreCase = true)
-                                    }
-                                    val isSabbathDay = isShabbat || isRestDay
-                                    
-                                    val bg = when {
-                                        cell.isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
-                                        cell.feastTitles.isNotEmpty() -> MaterialTheme.colorScheme.primary.copy(alpha = 0.40f) // Blue for feasts
-                                        else -> Color.Transparent
-                                    }
-                                    
-                                    val textColor = if (isSabbathDay) {
-                                        Color(0xFFFFD700) // Gold color
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        state.weeks.forEach { week ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                            ) {
+                                week.forEachIndexed { cellIndex, cell ->
+                                    if (cell == null) {
+                                        Spacer(Modifier.weight(1f).size(50.dp))
                                     } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    }
-                                    
-                                    Column(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .size(48.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(bg)
-                                            .padding(7.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text(
-                                            cell.lunarDay.toString(),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = textColor
-                                        )
-                                        Text(
-                                            cell.gregorianDate.dayOfMonth.toString(),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (isSabbathDay) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
+                                        // Check if this is a Shabbat day (Saturday) or a rest day during feasts
+                                        val isShabbat = cell.gregorianDate.dayOfWeek == DayOfWeek.SATURDAY
+                                        val isRestDay = cell.feastTitles.any { title ->
+                                            title.contains("Unleavened Bread begins", ignoreCase = true) ||
+                                            title.contains("Unleavened Bread ends", ignoreCase = true) ||
+                                            title.contains("Shavuot", ignoreCase = true) ||
+                                            title.contains("Trumpets", ignoreCase = true) ||
+                                            title.contains("Atonement", ignoreCase = true) ||
+                                            title.contains("Tabernacles begins", ignoreCase = true) ||
+                                            title.contains("Tabernacles ends", ignoreCase = true)
+                                        }
+                                        val isSabbathDay = isShabbat || isRestDay
+                                        
+                                        val bg = when {
+                                            cell.isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                                            cell.feastTitles.isNotEmpty() -> MaterialTheme.colorScheme.primary.copy(alpha = 0.40f) // Blue for feasts
+                                            else -> Color.Transparent
+                                        }
+                                        
+                                        val textColor = if (isSabbathDay) {
+                                            Color(0xFFFFD700) // Gold color
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        }
+                                        
+                                        // Container for the cell with relative positioning for gregorian date box
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .size(48.dp)
+                                        ) {
+                                            // Gregorian date box - same width as cell, offset right by 25% to show it spans into next day
+                                            // This shows that biblical day includes most of current gregorian day and part of next day (after sunset)
+                                            Box(
+                                                modifier = Modifier
+                                                    .offset(x = 12.dp, y = 32.dp) // Offset right by 25% of cell width (48dp * 0.25 = 12dp)
+                                                    .size(48.dp, 12.dp) // Same width as cell
+                                                    .clip(RoundedCornerShape(2.dp))
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    cell.gregorianDate.dayOfMonth.toString(),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (isSabbathDay) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            
+                                            // Biblical day cell
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(bg)
+                                                    .padding(7.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.Top,
+                                            ) {
+                                                Text(
+                                                    cell.lunarDay.toString(),
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = textColor
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }

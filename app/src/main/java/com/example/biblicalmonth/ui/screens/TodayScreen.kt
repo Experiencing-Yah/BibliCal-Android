@@ -236,8 +236,16 @@ fun TodayScreen(vm: TodayViewModel = viewModel()) {
         if (showDatePicker) {
             DatePickerDialog(
                 onDismiss = { showDatePicker = false },
-                onConfirm = { year, month, day, useSunsetDate ->
-                    vm.setCurrentDate(year, month, day, useSunsetDate)
+                onConfirm = { year, month, day ->
+                    // Automatically use the appropriate date based on context (after sunset or not)
+                    val referenceDate = if (state.isAfterSunset) {
+                        // After sunset: use sunset date (today's date, since biblical day started at sunset)
+                        state.gregorianSunsetDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
+                    } else {
+                        // Before sunset: use daytime date (today's date)
+                        state.gregorianDaytimeDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
+                    }
+                    vm.setCurrentDate(year, month, day, referenceDate)
                     showDatePicker = false
                 },
                 initialYear = selectedYear,
@@ -254,7 +262,7 @@ fun TodayScreen(vm: TodayViewModel = viewModel()) {
 @Composable
 fun DatePickerDialog(
     onDismiss: () -> Unit,
-    onConfirm: (Int, Int, Int, Boolean) -> Unit,
+    onConfirm: (Int, Int, Int) -> Unit,
     initialYear: Int,
     initialMonth: Int,
     initialDay: Int,
@@ -266,20 +274,19 @@ fun DatePickerDialog(
     val repo = remember { LunarRepository(context) }
     val defaultYear = remember { repo.calculateDefaultYear() }
     
-    // Get current date from repository
-    var year by remember { mutableStateOf(initialYear) }
-    var month by remember { mutableStateOf(initialMonth) }
-    var day by remember { mutableStateOf(initialDay) }
-    var useSunsetDate by remember { mutableStateOf(isAfterSunset) }
+    // Use string states to allow intermediate values while typing
+    var yearText by remember { mutableStateOf(initialYear.toString()) }
+    var monthText by remember { mutableStateOf(initialMonth.toString()) }
+    var dayText by remember { mutableStateOf(initialDay.toString()) }
     
     LaunchedEffect(Unit) {
         val currentDate = repo.getToday()
         if (currentDate != null) {
-            year = currentDate.yearNumber
-            month = currentDate.monthNumber
-            day = currentDate.dayOfMonth
-        } else if (year == 2024) {
-            year = defaultYear
+            yearText = currentDate.yearNumber.toString()
+            monthText = currentDate.monthNumber.toString()
+            dayText = currentDate.dayOfMonth.toString()
+        } else if (initialYear == 2024) {
+            yearText = defaultYear.toString()
         }
     }
 
@@ -291,22 +298,37 @@ fun DatePickerDialog(
                 Text("Biblical Date:", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     androidx.compose.material3.TextField(
-                        value = year.toString(),
-                        onValueChange = { year = it.toIntOrNull() ?: defaultYear },
+                        value = yearText,
+                        onValueChange = { newValue ->
+                            // Only allow digits, allow empty string while typing
+                            if (newValue.all { it.isDigit() }) {
+                                yearText = newValue
+                            }
+                        },
                         label = { Text("Year") },
                         modifier = Modifier.width(100.dp),
                         readOnly = false
                     )
                     androidx.compose.material3.TextField(
-                        value = month.toString(),
-                        onValueChange = { month = it.toIntOrNull()?.coerceIn(1, 13) ?: 1 },
+                        value = monthText,
+                        onValueChange = { newValue ->
+                            // Only allow digits, allow empty string while typing
+                            if (newValue.all { it.isDigit() }) {
+                                monthText = newValue
+                            }
+                        },
                         label = { Text("Month") },
                         modifier = Modifier.width(80.dp),
                         readOnly = false
                     )
                     androidx.compose.material3.TextField(
-                        value = day.toString(),
-                        onValueChange = { day = it.toIntOrNull()?.coerceIn(1, 30) ?: 1 },
+                        value = dayText,
+                        onValueChange = { newValue ->
+                            // Only allow digits, allow empty string while typing
+                            if (newValue.all { it.isDigit() }) {
+                                dayText = newValue
+                            }
+                        },
                         label = { Text("Day") },
                         modifier = Modifier.width(80.dp),
                         readOnly = false
@@ -333,25 +355,21 @@ fun DatePickerDialog(
                     )
                 }
                 Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                ) {
-                    Text(
-                        if (useSunsetDate) "Using sunset date (evening)" else "Using daytime date",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    androidx.compose.material3.Switch(
-                        checked = useSunsetDate,
-                        onCheckedChange = { useSunsetDate = it }
-                    )
-                }
+                Text(
+                    if (isAfterSunset) "Using sunset date (evening) - biblical day started at sunset" 
+                    else "Using daytime date - biblical day will start at sunset",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         confirmButton = {
             Button(onClick = {
-                onConfirm(year, month, day, useSunsetDate)
+                // Parse and validate values on confirm
+                val parsedYear = yearText.toIntOrNull() ?: defaultYear
+                val parsedMonth = monthText.toIntOrNull()?.coerceIn(1, 13) ?: 1
+                val parsedDay = dayText.toIntOrNull()?.coerceIn(1, 30) ?: 1
+                onConfirm(parsedYear, parsedMonth, parsedDay)
             }) {
                 Text("Set", color = androidx.compose.ui.graphics.Color.White)
             }

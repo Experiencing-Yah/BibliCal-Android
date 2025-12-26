@@ -104,7 +104,7 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
 
-            // Calculate sunset and daytime dates FIRST to determine which Gregorian date to use
+            // Calculate sunset and daytime dates for display purposes
             val location = currentLocation
             val now = ZonedDateTime.now(ZoneId.systemDefault())
             val todayDate = LocalDate.now()
@@ -113,12 +113,10 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
             var daytimeDate: String? = null
             var sunsetDate: String? = null
             var isAfterSunset = false
-            var dateToUseForBiblical = todayDate // Default to today
             
             if (location != null) {
                 val zoneId = ZoneId.systemDefault()
                 val todaySunset = SunsetCalculator.calculateSunsetTime(todayDate, location.latitude, location.longitude, zoneId)
-                val yesterdaySunset = SunsetCalculator.calculateSunsetTime(yesterdayDate, location.latitude, location.longitude, zoneId)
                 
                 if (todaySunset != null) {
                     isAfterSunset = now.isAfter(todaySunset)
@@ -131,25 +129,18 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
                     } else {
                         yesterdayDate.toString()
                     }
-                    // Use sunset date for biblical date calculation
-                    dateToUseForBiblical = if (now.isAfter(todaySunset)) {
-                        todayDate
-                    } else {
-                        yesterdayDate
-                    }
                 } else {
                     daytimeDate = todayDate.toString()
                     sunsetDate = yesterdayDate.toString()
-                    dateToUseForBiblical = yesterdayDate
                 }
             } else {
                 daytimeDate = todayDate.toString()
                 sunsetDate = yesterdayDate.toString()
-                dateToUseForBiblical = yesterdayDate
             }
 
-            // Get biblical date using the appropriate Gregorian date (sunset date if after sunset)
-            val today = repo.resolveFor(dateToUseForBiblical)
+            // Use today's date for biblical date calculation to match calendar screen
+            // This ensures consistency - when user sets "today is 5th day", all screens show 5th day
+            val today = repo.getToday()
             if (today == null) {
                 _state.value = _state.value.copy(
                     hasAnchor = true,
@@ -310,29 +301,12 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(upcomingFeasts = sortedFeasts, isLoadingFeasts = false)
     }
 
-    fun setCurrentDate(year: Int, month: Int, day: Int, useSunsetDate: Boolean) {
+    fun setCurrentDate(year: Int, month: Int, day: Int, referenceDate: LocalDate) {
         viewModelScope.launch {
-            val location = currentLocation
-            val zoneId = ZoneId.systemDefault()
-            val now = ZonedDateTime.now(zoneId)
-            val todayDate = LocalDate.now()
-            
-            // Determine which Gregorian date to use
-            val gregorianDate = if (useSunsetDate && location != null) {
-                // Use sunset date: if after today's sunset, use today, otherwise yesterday
-                val todaySunset = SunsetCalculator.calculateSunsetTime(todayDate, location.latitude, location.longitude, zoneId)
-                if (todaySunset != null && now.isAfter(todaySunset)) {
-                    todayDate
-                } else {
-                    todayDate.minusDays(1)
-                }
-            } else {
-                // Use daytime date (today)
-                todayDate
-            }
-            
-            // Calculate month start: if day 4 occurs on gregorianDate, month started (day-1) days earlier
-            val monthStart = gregorianDate.minusDays((day - 1).toLong())
+            // Use the reference date that was shown in the dialog
+            // This ensures consistency - the same input produces the same result regardless of when it's confirmed
+            // Calculate month start: if day X occurs on referenceDate, month started (day-1) days earlier
+            val monthStart = referenceDate.minusDays((day - 1).toLong())
             repo.setAnchor(year = year, month = month, startDate = monthStart)
             refresh()
         }

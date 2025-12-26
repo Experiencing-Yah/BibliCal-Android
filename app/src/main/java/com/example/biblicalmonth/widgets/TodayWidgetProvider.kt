@@ -105,9 +105,9 @@ class TodayWidgetProvider : AppWidgetProvider() {
                     val sunsetDate = if (isAfterTodaySunset) todayDate else todayDate.minusDays(1)
                     val nextSunsetDate = if (isAfterTodaySunset) todayDate.plusDays(1) else todayDate
                     
-                    // Use sunset date for biblical date calculation
-                    val dateToUseForBiblical = sunsetDate
-                    val today = repo.resolveFor(dateToUseForBiblical)
+                    // Use today's date for biblical date calculation to match calendar and today screen
+                    // This ensures consistency - when user sets "today is 5th day", all screens show 5th day
+                    val today = repo.getToday()
                     val lunarText = if (today == null) {
                         "Tap to set an anchor"
                     } else {

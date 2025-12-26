@@ -382,41 +382,20 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
         
         com.example.biblicalmonth.ui.screens.DatePickerDialog(
             onDismiss = { showDatePicker = false },
-            onConfirm = { y, m, d, useSunsetDate ->
+            onConfirm = { y, m, d ->
                 scope.launch {
                     val repo = LunarRepository(context)
-                    val todayDate = java.time.LocalDate.now()
-                    val zoneId = java.time.ZoneId.systemDefault()
-                    
-                    // Get location for sunset calculation
-                    val location = try {
-                        val fusedLocationClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
-                        val cancellationTokenSource = com.google.android.gms.tasks.CancellationTokenSource()
-                        val locationTask = fusedLocationClient.getCurrentLocation(
-                            com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-                            cancellationTokenSource.token
-                        )
-                        Tasks.await(locationTask, 5, java.util.concurrent.TimeUnit.SECONDS)
-                    } catch (e: Exception) {
-                        null
-                    }
-                    
-                    val gregorianDate = if (useSunsetDate && location != null) {
-                        val todaySunset = com.example.biblicalmonth.util.SunsetCalculator.calculateSunsetTime(
-                            todayDate, location.latitude, location.longitude, zoneId
-                        )
-                        val now = java.time.ZonedDateTime.now(zoneId)
-                        if (todaySunset != null && now.isAfter(todaySunset)) {
-                            todayDate
-                        } else {
-                            todayDate.minusDays(1)
-                        }
+                    // Automatically use the appropriate date based on context (after sunset or not)
+                    val referenceDate = if (isAfterSunset) {
+                        // After sunset: use sunset date (today's date, since biblical day started at sunset)
+                        sunsetDate?.let { java.time.LocalDate.parse(it) } ?: java.time.LocalDate.now()
                     } else {
-                        todayDate
+                        // Before sunset: use daytime date (today's date)
+                        daytimeDate?.let { java.time.LocalDate.parse(it) } ?: java.time.LocalDate.now()
                     }
                     
-                    // Calculate month start: if day 4 occurs on gregorianDate, month started (day-1) days earlier
-                    val monthStart = gregorianDate.minusDays((d - 1).toLong())
+                    // Calculate month start: if day X occurs on referenceDate, month started (day-1) days earlier
+                    val monthStart = referenceDate.minusDays((d - 1).toLong())
                     repo.setAnchor(y, m, monthStart)
                     vm.refresh() // Refresh to update hasAnchor state
                 }
