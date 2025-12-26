@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">BibliCal</string>
+
+    <string name="nav_today">Today</string>
+    <string name="nav_calendar">Calendar</string>
+    <string name="nav_settings">Settings</string>
+
+    <string name="notification_channel_status_name">BibliCal Status</string>
+    <string name="notification_channel_prompts_name">BibliCal Prompts</string>
+
+    <string name="widget_title">BibliCal</string>
+</resources>
+

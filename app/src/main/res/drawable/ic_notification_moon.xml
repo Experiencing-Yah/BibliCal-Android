@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Crescent moon icon - centered and scaled from original SVG -->
+    <!-- Path center is at 18,18, translate to center at 12,12, then scale to fit -->
+    <group
+        android:translateX="22"
+        android:translateY="35"
+        android:scaleX="1"
+        android:scaleY="1"
+        android:rotation="200">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M22.7,26.827C21.299,27.576 19.698,28 18,28C12.481,28 8,23.519 8,18C8,12.481 12.481,8 18,8C19.496,8 20.916,8.329 22.192,8.92C21.395,8.725 20.561,8.621 19.7,8.621C14.236,8.621 9.8,12.798 9.8,17.942C9.8,23.087 14.236,27.264 19.7,27.264C20.746,27.264 21.754,27.111 22.7,26.827Z"/>
+    </group>
+</vector>
