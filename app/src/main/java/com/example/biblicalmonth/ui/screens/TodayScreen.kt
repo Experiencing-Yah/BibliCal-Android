@@ -205,6 +205,47 @@ fun TodayScreen(vm: TodayViewModel = viewModel()) {
                 }
             }
 
+            // Jerusalem Time card
+            state.jerusalemTimeInfo?.let { jerusalemInfo ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("Jerusalem Time", style = MaterialTheme.typography.titleMedium)
+                        
+                        // Current time in Jerusalem
+                        var displayCurrentTime by remember { mutableStateOf(jerusalemInfo.currentTime.format(DateTimeFormatter.ofPattern("h:mm:ss a"))) }
+                        LaunchedEffect(jerusalemInfo.currentTime) {
+                            while (true) {
+                                val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Jerusalem"))
+                                displayCurrentTime = now.format(DateTimeFormatter.ofPattern("h:mm:ss a"))
+                                kotlinx.coroutines.delay(1000)
+                            }
+                        }
+                        Text("Current time: $displayCurrentTime", style = MaterialTheme.typography.bodyLarge)
+                        
+                        // Sunset time and countdown
+                        jerusalemInfo.sunsetTime?.let { sunsetTime ->
+                            var displayCountdown by remember { mutableStateOf(jerusalemInfo.getCountdownText()) }
+                            LaunchedEffect(sunsetTime) {
+                                while (true) {
+                                    displayCountdown = jerusalemInfo.getCountdownText()
+                                    kotlinx.coroutines.delay(1000)
+                                }
+                            }
+                            Text("Countdown to sunset: $displayCountdown", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "Sunset: ${sunsetTime.format(DateTimeFormatter.ofPattern("MMM d, h:mm a"))}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } ?: run {
+                            Text("Sunset: Unable to calculate", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+
         // Upcoming feasts
         if (!state.isLoading) {
             Card(modifier = Modifier.fillMaxWidth()) {

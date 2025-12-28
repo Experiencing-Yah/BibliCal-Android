@@ -22,6 +22,7 @@ data class SettingsUiState(
     val hasAnchor: Boolean = false,
     val includeHanukkah: Boolean = false,
     val includePurim: Boolean = false,
+    val showJerusalemTime: Boolean = false,
 )
 
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
@@ -46,6 +47,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                 hasAnchor = repo.hasAnyAnchor(),
                 includeHanukkah = settings.includeHanukkah.first(),
                 includePurim = settings.includePurim.first(),
+                showJerusalemTime = settings.showJerusalemTime.first(),
             )
         }
     }
@@ -97,6 +99,13 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun setIncludePurim(enabled: Boolean) {
         viewModelScope.launch {
             settings.setIncludePurim(enabled)
+            refresh()
+        }
+    }
+
+    fun setShowJerusalemTime(enabled: Boolean) {
+        viewModelScope.launch {
+            settings.setShowJerusalemTime(enabled)
             refresh()
         }
     }

@@ -54,6 +54,27 @@ data class SunsetInfo(
     }
 }
 
+data class JerusalemTimeInfo(
+    val currentTime: ZonedDateTime,
+    val sunsetTime: ZonedDateTime?,
+) {
+    // Calculate countdown text dynamically based on current time
+    fun getCountdownText(): String {
+        val sunsetTime = this.sunsetTime ?: return "Sunset passed"
+        val now = ZonedDateTime.now(sunsetTime.zone)
+        val duration = Duration.between(now, sunsetTime)
+        
+        return if (duration.isNegative) {
+            "Sunset passed"
+        } else {
+            val hours = duration.toHours()
+            val minutes = (duration.toMinutes() % 60).toInt()
+            val seconds = (duration.seconds % 60).toInt()
+            String.format("%02d:%02d:%02d", hours, minutes, seconds)
+        }
+    }
+}
+
 data class TodayUiState(
     val hasAnchor: Boolean = false,
     val lunarLabel: String = "—",
@@ -63,6 +84,7 @@ data class TodayUiState(
     val isAfterSunset: Boolean = false,
     val hint: String? = null,
     val sunsetInfo: SunsetInfo? = null,
+    val jerusalemTimeInfo: JerusalemTimeInfo? = null,
     val upcomingFeasts: List<UpcomingFeast> = emptyList(),
     val currentDayOfMonth: Int = 0,
     val showNextMonthButton: Boolean = false,
@@ -85,6 +107,13 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         refresh()
         // No need to update countdown every second - it's calculated dynamically in the UI
         // Only update when sunset time or location changes
+        
+        // Observe settings changes to update Jerusalem time info when setting is toggled
+        viewModelScope.launch {
+            settings.showJerusalemTime.collect {
+                updateJerusalemTimeInfo()
+            }
+        }
     }
 
     fun setLocation(location: Location?) {
@@ -202,6 +231,7 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
                 } else null,
                 isLoading = false,
                 sunsetInfo = _state.value.sunsetInfo, // Preserve existing sunset info
+                jerusalemTimeInfo = _state.value.jerusalemTimeInfo, // Preserve existing Jerusalem time info
                 upcomingFeasts = _state.value.upcomingFeasts, // Preserve existing feasts
                 isLoadingSunset = _state.value.isLoadingSunset,
                 isLoadingFeasts = _state.value.isLoadingFeasts,
@@ -213,6 +243,7 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
             }
             updateUpcomingFeasts()
             updateSunsetCountdown()
+            updateJerusalemTimeInfo()
         }
     }
 
@@ -350,6 +381,44 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.startNextMonthOn(LocalDate.now().plusDays(1))
             refresh()
+        }
+    }
+
+    private fun updateJerusalemTimeInfo() {
+        viewModelScope.launch {
+            val showJerusalemTime = settings.showJerusalemTime.first()
+            
+            if (!showJerusalemTime) {
+                _state.value = _state.value.copy(jerusalemTimeInfo = null)
+                return@launch
+            }
+
+            // Jerusalem coordinates
+            val jerusalemLatitude = 31.7683
+            val jerusalemLongitude = 35.2137
+            val jerusalemZoneId = ZoneId.of("Asia/Jerusalem")
+
+            // Get current time in Jerusalem
+            val currentTime = ZonedDateTime.now(jerusalemZoneId)
+
+            // Calculate next sunset in Jerusalem
+            val nextSunset = SunsetCalculator.calculateNextSunset(
+                latitude = jerusalemLatitude,
+                longitude = jerusalemLongitude,
+                timeZone = jerusalemZoneId.id
+            )
+
+            val jerusalemTimeInfo = JerusalemTimeInfo(
+                currentTime = currentTime,
+                sunsetTime = nextSunset
+            )
+
+            // Only update if the sunset time actually changed (current time changes every second, but we calculate countdown in UI)
+            val currentInfo = _state.value.jerusalemTimeInfo
+            if (currentInfo == null || 
+                currentInfo.sunsetTime != jerusalemTimeInfo.sunsetTime) {
+                _state.value = _state.value.copy(jerusalemTimeInfo = jerusalemTimeInfo)
+            }
         }
     }
 }

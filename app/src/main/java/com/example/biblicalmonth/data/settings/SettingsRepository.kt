@@ -22,6 +22,7 @@ class SettingsRepository(private val context: Context) {
         val FIRSTFRUITS_RULE = stringPreferencesKey("firstfruits_rule")
         val INCLUDE_HANUKKAH = booleanPreferencesKey("include_hanukkah")
         val INCLUDE_PURIM = booleanPreferencesKey("include_purim")
+        val SHOW_JERUSALEM_TIME = booleanPreferencesKey("show_jerusalem_time")
 
         val LAST_MOON_PROMPT_EPOCH_DAY = longPreferencesKey("last_moon_prompt_epoch_day")
         val LAST_AVIV_PROMPT_EPOCH_DAY = longPreferencesKey("last_aviv_prompt_epoch_day")
@@ -60,6 +61,9 @@ class SettingsRepository(private val context: Context) {
 
     val includePurim: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.INCLUDE_PURIM] ?: false }
+
+    val showJerusalemTime: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.SHOW_JERUSALEM_TIME] ?: false }
 
     suspend fun setStatusNotificationEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.STATUS_NOTIFICATION_ENABLED] = enabled }
@@ -101,6 +105,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setIncludePurim(enabled: Boolean) {
         context.dataStore.edit { it[Keys.INCLUDE_PURIM] = enabled }
+    }
+
+    suspend fun setShowJerusalemTime(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SHOW_JERUSALEM_TIME] = enabled }
     }
 
     suspend fun getLastShabbatReminderEpochDay(): Long =

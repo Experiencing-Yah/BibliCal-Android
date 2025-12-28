@@ -191,6 +191,22 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
 
                 Divider()
 
+                // Jerusalem Time Section
+                Text("Jerusalem Time", style = MaterialTheme.typography.titleLarge)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                        Text("Show Jerusalem Time", style = MaterialTheme.typography.titleMedium)
+                        Text("Display current time, sunset time, and countdown for Jerusalem on the Today screen.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(checked = state.showJerusalemTime, onCheckedChange = { vm.setShowJerusalemTime(it) })
+                }
+
+                Divider()
+
                 // Date Adjustment Section
                 Text("Date Adjustment", style = MaterialTheme.typography.titleLarge)
                 Button(
