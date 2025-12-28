@@ -97,13 +97,8 @@ fun TodayScreen(vm: TodayViewModel = viewModel()) {
         }
     }
 
-    // Auto-refresh every 10 seconds
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(10000) // 10 seconds
-            vm.refresh()
-        }
-    }
+    // No need for periodic refresh - countdown updates every second in ViewModel
+    // and date changes are handled by the ViewModel's refresh() when needed
 
     Column(
         modifier = Modifier
@@ -180,7 +175,16 @@ fun TodayScreen(vm: TodayViewModel = viewModel()) {
                         Text("Loading Sunset Data...", style = MaterialTheme.typography.bodyMedium)
                     } else {
                         state.sunsetInfo?.let { sunsetInfo ->
-                            Text("Countdown to sunset: ${sunsetInfo.countdownText}", style = MaterialTheme.typography.bodyLarge)
+                            // Update countdown display every second using LaunchedEffect
+                            // This avoids updating the entire state every second
+                            var displayCountdown by remember { mutableStateOf(sunsetInfo.getCountdownText()) }
+                            LaunchedEffect(sunsetInfo.nextSunset) {
+                                while (true) {
+                                    displayCountdown = sunsetInfo.getCountdownText()
+                                    kotlinx.coroutines.delay(1000)
+                                }
+                            }
+                            Text("Countdown to sunset: $displayCountdown", style = MaterialTheme.typography.bodyLarge)
                             Text(
                                 "Sunset: ${sunsetInfo.nextSunset?.format(DateTimeFormatter.ofPattern("MMM d, h:mm a"))}",
                                 style = MaterialTheme.typography.bodySmall

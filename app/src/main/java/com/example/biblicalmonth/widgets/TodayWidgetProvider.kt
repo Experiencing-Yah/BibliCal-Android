@@ -101,13 +101,25 @@ class TodayWidgetProvider : AppWidgetProvider() {
                     val now = ZonedDateTime.now(zoneId)
                     val isAfterTodaySunset = todaySunset != null && now.isAfter(todaySunset)
                     
-                    // Determine which dates to show - sunset date is yesterday if before today's sunset, today if after
-                    val sunsetDate = if (isAfterTodaySunset) todayDate else todayDate.minusDays(1)
-                    val nextSunsetDate = if (isAfterTodaySunset) todayDate.plusDays(1) else todayDate
+                    // Determine which dates to show and which date to use for biblical calculation
+                    val sunsetDate: LocalDate
+                    val nextSunsetDate: LocalDate
+                    val dateToUseForBiblical: LocalDate
                     
-                    // Use today's date for biblical date calculation to match calendar and today screen
-                    // This ensures consistency - when user sets "today is 5th day", all screens show 5th day
-                    val today = repo.getToday()
+                    if (isAfterTodaySunset) {
+                        // After sunset: biblical day has advanced
+                        sunsetDate = todayDate // When the biblical day started
+                        nextSunsetDate = todayDate.plusDays(1)
+                        dateToUseForBiblical = todayDate.plusDays(1) // Use tomorrow for biblical calculation
+                    } else {
+                        // Before sunset: still in current biblical day
+                        sunsetDate = todayDate.minusDays(1) // When the current biblical day started
+                        nextSunsetDate = todayDate
+                        dateToUseForBiblical = todayDate // Use today for biblical calculation
+                    }
+                    
+                    // Get biblical date using the appropriate Gregorian date
+                    val today = repo.resolveFor(dateToUseForBiblical)
                     val lunarText = if (today == null) {
                         "Tap to set an anchor"
                     } else {
@@ -163,7 +175,7 @@ class TodayWidgetProvider : AppWidgetProvider() {
                 val today = LocalDate.now()
                 val isShabbat = isCurrentlyShabbat(now, today, latitude, longitude)
                 val shabbatLabel = if (isShabbat) "" else "Until Shabbat"
-                val displayText = if (isShabbat) "Enjoy Shabbat" else calculateShabbatCountdown(latitude, longitude)
+                val displayText = if (isShabbat) "Shabbat\nShalom" else calculateShabbatCountdown(latitude, longitude)
                 
                 val views = RemoteViews(context.packageName, R.layout.today_widget).apply {
                     setTextViewText(R.id.widget_lunar_date, lunarText)
@@ -187,20 +199,29 @@ class TodayWidgetProvider : AppWidgetProvider() {
         
         private fun isCurrentlyShabbat(now: ZonedDateTime, today: LocalDate, latitude: Double, longitude: Double): Boolean {
             // Shabbat is from Friday sunset to Saturday sunset
-            val isSaturday = today.dayOfWeek == DayOfWeek.SATURDAY
-            if (!isSaturday) return false
-            
-            // If it's Saturday, check if we're before sunset
             val zoneId = ZoneId.systemDefault()
-            val saturdaySunset = SunsetCalculator.calculateSunsetTime(today, latitude, longitude, zoneId)
-                ?: today.atTime(18, 0).atZone(zoneId)
             
-            // Also check if it's after Friday sunset
-            val yesterday = today.minusDays(1)
-            val fridaySunset = SunsetCalculator.calculateSunsetTime(yesterday, latitude, longitude, zoneId)
-                ?: yesterday.atTime(18, 0).atZone(zoneId)
+            // Check if it's Friday after sunset
+            if (today.dayOfWeek == DayOfWeek.FRIDAY) {
+                val fridaySunset = SunsetCalculator.calculateSunsetTime(today, latitude, longitude, zoneId)
+                    ?: today.atTime(18, 0).atZone(zoneId)
+                if (now.isAfter(fridaySunset)) {
+                    return true
+                }
+            }
             
-            return now.isAfter(fridaySunset) && now.isBefore(saturdaySunset)
+            // Check if it's Saturday before sunset
+            if (today.dayOfWeek == DayOfWeek.SATURDAY) {
+                val saturdaySunset = SunsetCalculator.calculateSunsetTime(today, latitude, longitude, zoneId)
+                    ?: today.atTime(18, 0).atZone(zoneId)
+                val yesterday = today.minusDays(1)
+                val fridaySunset = SunsetCalculator.calculateSunsetTime(yesterday, latitude, longitude, zoneId)
+                    ?: yesterday.atTime(18, 0).atZone(zoneId)
+                
+                return now.isAfter(fridaySunset) && now.isBefore(saturdaySunset)
+            }
+            
+            return false
         }
         
         private fun calculateShabbatCountdown(latitude: Double, longitude: Double): String {
