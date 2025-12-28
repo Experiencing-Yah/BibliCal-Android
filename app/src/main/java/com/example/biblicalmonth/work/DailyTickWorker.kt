@@ -8,7 +8,9 @@ import com.example.biblicalmonth.data.settings.SettingsRepository
 import com.example.biblicalmonth.notifications.Notifier
 import com.example.biblicalmonth.util.MonthNames
 import com.example.biblicalmonth.util.SunsetCalculator
-import com.example.biblicalmonth.widgets.TodayWidgetProvider
+import com.example.biblicalmonth.widgets.DateWidgetProvider
+import com.example.biblicalmonth.widgets.ShabbatWidgetProvider
+import com.example.biblicalmonth.widgets.CombinedWidgetProvider
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
@@ -42,7 +44,9 @@ class DailyTickWorker(
                 Notifier.cancelStatus(applicationContext)
             }
 
-            TodayWidgetProvider.updateAll(applicationContext)
+            DateWidgetProvider.updateAll(applicationContext)
+            ShabbatWidgetProvider.updateAll(applicationContext)
+            CombinedWidgetProvider.updateAll(applicationContext)
 
             if (settings.promptsEnabled.first()) {
                 maybePromptMoon(repo, settings, today)

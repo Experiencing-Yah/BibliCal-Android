@@ -9,5 +9,10 @@
     <string name="notification_channel_prompts_name">BibliCal Prompts</string>
 
     <string name="widget_title">BibliCal</string>
+    
+    <string name="widget_today_description">Date and Shabbat countdown</string>
+    <string name="widget_date_description">Biblical date only</string>
+    <string name="widget_shabbat_description">Shabbat countdown only</string>
+    <string name="widget_combined_description">Date and Shabbat countdown</string>
 </resources>
 

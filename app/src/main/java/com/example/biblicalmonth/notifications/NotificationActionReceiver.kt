@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.Intent
 import com.example.biblicalmonth.data.LunarRepository
 import com.example.biblicalmonth.data.settings.SettingsRepository
-import com.example.biblicalmonth.widgets.TodayWidgetProvider
+import com.example.biblicalmonth.widgets.DateWidgetProvider
+import com.example.biblicalmonth.widgets.ShabbatWidgetProvider
+import com.example.biblicalmonth.widgets.CombinedWidgetProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -64,7 +66,9 @@ class NotificationActionReceiver : BroadcastReceiver() {
             } else {
                 Notifier.cancelStatus(context)
             }
-            TodayWidgetProvider.updateAll(context)
+            DateWidgetProvider.updateAll(context)
+            ShabbatWidgetProvider.updateAll(context)
+            CombinedWidgetProvider.updateAll(context)
         }
     }
 

@@ -31,14 +31,36 @@
         </activity>
 
         <receiver
-            android:name=".widgets.TodayWidgetProvider"
+            android:name=".widgets.DateWidgetProvider"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/today_widget_info" />
+                android:resource="@xml/widget_date_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widgets.ShabbatWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_shabbat_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widgets.CombinedWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_combined_info" />
         </receiver>
 
         <receiver
