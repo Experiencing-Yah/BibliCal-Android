@@ -98,13 +98,33 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     private val settings = SettingsRepository(app)
     private val geocoder = Geocoder(app)
 
-    private val _state = MutableStateFlow(TodayUiState())
+    private val _state = MutableStateFlow(TodayUiState(isLoading = true))
     val state: StateFlow<TodayUiState> = _state.asStateFlow()
 
     private var currentLocation: Location? = null
+    private var isRefreshing = false
 
     init {
-        refresh()
+        // Load cached location immediately so we can calculate sunset right away
+        viewModelScope.launch {
+            try {
+                val cachedLocation = settings.getCachedLocation()
+                if (cachedLocation != null) {
+                    // Create a Location object from cached coordinates
+                    val location = android.location.Location("cached")
+                    location.latitude = cachedLocation.first
+                    location.longitude = cachedLocation.second
+                    location.accuracy = 100f // Approximate accuracy for cached location
+                    location.time = System.currentTimeMillis()
+                    currentLocation = location
+                }
+            } catch (e: Exception) {
+                // Ignore errors loading cached location
+            }
+            // Refresh after attempting to load cached location
+            refresh()
+        }
+        
         // No need to update countdown every second - it's calculated dynamically in the UI
         // Only update when sunset time or location changes
         
@@ -124,12 +144,20 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
                 settings.cacheLocation(location.latitude, location.longitude)
             }
         }
-        updateSunsetCountdown()
+        // Refresh to recalculate isAfterSunset with the new location
+        refresh()
     }
 
     fun refresh() {
+        // Prevent concurrent refreshes
+        if (isRefreshing) {
+            return
+        }
+        
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true)
+            isRefreshing = true
+            try {
+                _state.value = _state.value.copy(isLoading = true)
             
             val hasAnchor = repo.hasAnyAnchor()
             if (!hasAnchor) {
@@ -144,9 +172,9 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             // Calculate sunset and daytime dates for display purposes
-            val location = currentLocation
+            // Use a consistent "now" time for all calculations to avoid race conditions
             val now = ZonedDateTime.now(ZoneId.systemDefault())
-            val todayDate = LocalDate.now()
+            val todayDate = now.toLocalDate()
             val yesterdayDate = todayDate.minusDays(1)
             val tomorrowDate = todayDate.plusDays(1)
             
@@ -155,11 +183,13 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
             var isAfterSunset = false
             var dateToUseForBiblical = todayDate
             
+            val location = currentLocation
             if (location != null) {
                 val zoneId = ZoneId.systemDefault()
                 val todaySunset = SunsetCalculator.calculateSunsetTime(todayDate, location.latitude, location.longitude, zoneId)
                 
                 if (todaySunset != null) {
+                    // Use the same "now" time for comparison to ensure consistency
                     isAfterSunset = now.isAfter(todaySunset)
                     if (isAfterSunset) {
                         // After sunset: biblical day has advanced
@@ -179,14 +209,18 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
                         dateToUseForBiblical = todayDate
                     }
                 } else {
+                    // Sunset calculation failed - default to before sunset
                     daytimeDate = todayDate.toString()
                     sunsetDate = yesterdayDate.toString()
                     dateToUseForBiblical = todayDate
+                    isAfterSunset = false
                 }
             } else {
+                // No location - default to before sunset
                 daytimeDate = todayDate.toString()
                 sunsetDate = yesterdayDate.toString()
                 dateToUseForBiblical = todayDate
+                isAfterSunset = false
             }
 
             // Get biblical date using the appropriate Gregorian date (tomorrow if after sunset, today if before)
@@ -216,11 +250,13 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
             }
             val lunarLabel = "$dayOrdinal day of the $monthOrdinal month, ${today.yearNumber}"
 
-            // Only update state if data has actually changed to prevent unnecessary UI refreshes
+            // Update state atomically - all date-related fields together
+            // Preserve sunset info, jerusalem time, and feasts to avoid unnecessary recalculations
+            val currentState = _state.value
             val newState = TodayUiState(
                 hasAnchor = true,
                 lunarLabel = lunarLabel,
-                gregorianLabel = LocalDate.now().toString(),
+                gregorianLabel = todayDate.toString(),
                 gregorianDaytimeDate = daytimeDate,
                 gregorianSunsetDate = sunsetDate,
                 isAfterSunset = isAfterSunset,
@@ -230,20 +266,24 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
                     "Day ${today.dayOfMonth}: you'll get a prompt to confirm if the new moon was seen."
                 } else null,
                 isLoading = false,
-                sunsetInfo = _state.value.sunsetInfo, // Preserve existing sunset info
-                jerusalemTimeInfo = _state.value.jerusalemTimeInfo, // Preserve existing Jerusalem time info
-                upcomingFeasts = _state.value.upcomingFeasts, // Preserve existing feasts
-                isLoadingSunset = _state.value.isLoadingSunset,
-                isLoadingFeasts = _state.value.isLoadingFeasts,
+                sunsetInfo = currentState.sunsetInfo, // Preserve existing sunset info
+                jerusalemTimeInfo = currentState.jerusalemTimeInfo, // Preserve existing Jerusalem time info
+                upcomingFeasts = currentState.upcomingFeasts, // Preserve existing feasts
+                isLoadingSunset = currentState.isLoadingSunset,
+                isLoadingFeasts = currentState.isLoadingFeasts,
             )
             
-            // Only update if state actually changed
-            if (_state.value != newState) {
-                _state.value = newState
-            }
+            // Always update state to ensure consistency - the comparison was causing issues
+            _state.value = newState
+            
+            // Update async data (feasts, sunset countdown, jerusalem time) after setting the main state
+            // This ensures the date calculation is shown immediately
             updateUpcomingFeasts()
             updateSunsetCountdown()
             updateJerusalemTimeInfo()
+            } finally {
+                isRefreshing = false
+            }
         }
     }
 

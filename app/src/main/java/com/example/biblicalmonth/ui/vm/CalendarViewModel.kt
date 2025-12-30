@@ -9,12 +9,15 @@ import com.example.biblicalmonth.domain.FeastDay
 import com.example.biblicalmonth.domain.LunarMonth
 import com.example.biblicalmonth.domain.MonthStatus
 import com.example.biblicalmonth.util.MonthNames
+import com.example.biblicalmonth.util.SunsetCalculator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 data class DayCell(
     val gregorianDate: LocalDate,
@@ -47,9 +50,21 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
 
     private var selectedYear: Int? = null
     private var selectedMonth: Int? = null
+    private var cachedLocation: Pair<Double, Double>? = null
 
     private val _state = MutableStateFlow(CalendarUiState())
     val state: StateFlow<CalendarUiState> = _state.asStateFlow()
+    
+    init {
+        // Load cached location immediately so we can calculate sunset right away
+        viewModelScope.launch {
+            try {
+                cachedLocation = settings.getCachedLocation()
+            } catch (e: Exception) {
+                // Ignore errors loading cached location
+            }
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -235,12 +250,36 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
 
+            // Determine which Gregorian date corresponds to "today" based on sunset
+            val now = ZonedDateTime.now(ZoneId.systemDefault())
+            val todayDate = LocalDate.now()
+            val dateToUseForToday = if (cachedLocation != null) {
+                val zoneId = ZoneId.systemDefault()
+                val todaySunset = SunsetCalculator.calculateSunsetTime(
+                    todayDate,
+                    cachedLocation!!.first,
+                    cachedLocation!!.second,
+                    zoneId
+                )
+                
+                if (todaySunset != null && now.isAfter(todaySunset)) {
+                    // After sunset: current biblical day corresponds to tomorrow's Gregorian date
+                    todayDate.plusDays(1)
+                } else {
+                    // Before sunset: current biblical day corresponds to today's Gregorian date
+                    todayDate
+                }
+            } else {
+                // No location - default to today
+                todayDate
+            }
+            
             val cells = (0 until adjustedMonth.lengthDays).map { offset ->
                 val g = adjustedMonth.startDate.plusDays(offset.toLong())
                 DayCell(
                     gregorianDate = g,
                     lunarDay = offset + 1,
-                    isToday = g == LocalDate.now(),
+                    isToday = g == dateToUseForToday,
                     feastTitles = feastByDate[g].orEmpty(),
                 )
             }

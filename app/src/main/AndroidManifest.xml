@@ -7,6 +7,9 @@
     <!-- Location for sunset calculations -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    
+    <!-- Internet for moon phase API -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Optional: only needed if user enables calendar export -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />

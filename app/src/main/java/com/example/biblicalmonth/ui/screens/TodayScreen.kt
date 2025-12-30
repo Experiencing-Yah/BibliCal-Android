@@ -97,8 +97,15 @@ fun TodayScreen(vm: TodayViewModel = viewModel()) {
         }
     }
 
-    // No need for periodic refresh - countdown updates every second in ViewModel
-    // and date changes are handled by the ViewModel's refresh() when needed
+    // Check periodically if we've crossed sunset and need to refresh the date
+    // Check every minute to catch sunset transitions without being too aggressive
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(60000) // Check every minute
+            // Trigger refresh to check if sunset has passed
+            vm.refresh()
+        }
+    }
 
     Column(
         modifier = Modifier

@@ -17,7 +17,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -107,6 +107,9 @@ dependencies {
 
     // Location services
     implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // HTTP client for API calls
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // Tests
     testImplementation("junit:junit:4.13.2")

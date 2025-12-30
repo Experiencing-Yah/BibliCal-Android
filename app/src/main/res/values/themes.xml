@@ -1,6 +1,9 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
+    <color name="launcher_background">#0A1F3D</color>
+    
     <style name="Theme.BiblicalMonth" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:statusBarColor" tools:targetApi="l">?attr/colorSurface</item>
+        <item name="android:windowBackground" tools:targetApi="l">@color/launcher_background</item>
     </style>
 </resources>
 
