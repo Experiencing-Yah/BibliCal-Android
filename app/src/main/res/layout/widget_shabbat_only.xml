@@ -3,15 +3,17 @@
     android:layout_height="match_parent"
     android:background="@android:color/transparent"
     android:orientation="vertical"
-    android:padding="8dp"
+    android:padding="6dp"
     android:gravity="center">
     
     <TextView
         android:id="@+id/widget_shabbat_countdown"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:minHeight="24dp"
         android:text="—"
-        android:textSize="14sp"
+        android:textSize="18sp"
         android:textStyle="bold"
         android:textColor="#FFD700"
         android:shadowColor="#000000"
@@ -19,14 +21,15 @@
         android:shadowDy="1"
         android:shadowRadius="2"
         android:gravity="center"
-        android:layout_gravity="center" />
+        android:layout_gravity="center"
+        android:lineSpacingExtra="2dp" />
     
     <TextView
         android:id="@+id/widget_shabbat_label"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Until Shabbat"
-        android:textSize="9sp"
+        android:textSize="12sp"
         android:textColor="#FFFFFF"
         android:shadowColor="#000000"
         android:shadowDx="1"

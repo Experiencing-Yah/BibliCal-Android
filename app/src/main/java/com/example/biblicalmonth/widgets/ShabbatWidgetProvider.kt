@@ -5,6 +5,8 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
+import android.util.TypedValue
 import android.widget.RemoteViews
 import com.example.biblicalmonth.R
 import com.example.biblicalmonth.ui.MainActivity
@@ -12,6 +14,16 @@ import com.example.biblicalmonth.ui.MainActivity
 class ShabbatWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         updateAll(context, appWidgetManager, appWidgetIds)
+    }
+
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle?
+    ) {
+        // Handle widget resize - update the widget when size changes
+        updateAll(context, appWidgetManager, intArrayOf(appWidgetId))
     }
 
     override fun onEnabled(context: Context) {
@@ -39,9 +51,33 @@ class ShabbatWidgetProvider : AppWidgetProvider() {
             )
 
             ids.forEach { id ->
+                // Get widget dimensions to calculate text size
+                val options = mgr.getAppWidgetOptions(id)
+                val widgetHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+                
+                // Calculate text sizes based on widget height
+                // Base size is for 1 cell (~70dp), scale proportionally
+                val baseHeight = 70f // 1 cell in dp
+                // Use widget height if available, otherwise default to base height
+                val actualHeight = if (widgetHeight > 0) widgetHeight.toFloat() else baseHeight
+                val scaleFactor = (actualHeight / baseHeight).coerceIn(0.8f, 2.5f) // Limit scaling between 0.8x and 2.5x
+                
+                // Base text sizes (for 1 cell height)
+                val baseCountdownSize = 18f
+                val baseLabelSize = 12f
+                
+                // Calculate scaled text sizes
+                val countdownSize = baseCountdownSize * scaleFactor
+                val labelSize = baseLabelSize * scaleFactor
+                
                 val views = RemoteViews(context.packageName, R.layout.widget_shabbat_only).apply {
                     setTextViewText(R.id.widget_shabbat_countdown, data.shabbatText)
                     setTextViewText(R.id.widget_shabbat_label, data.shabbatLabel)
+                    
+                    // Set dynamic text sizes (in scaled pixels)
+                    setTextViewTextSize(R.id.widget_shabbat_countdown, TypedValue.COMPLEX_UNIT_SP, countdownSize)
+                    setTextViewTextSize(R.id.widget_shabbat_label, TypedValue.COMPLEX_UNIT_SP, labelSize)
+                    
                     // Set gold color for Shabbat text
                     if (data.isShabbat) {
                         setTextColor(R.id.widget_shabbat_countdown, 0xFFFFD700.toInt())
