@@ -9,15 +9,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.biblicalmonth"
+    namespace = "com.experiencingyah.bibliCal"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.biblicalmonth"
+        applicationId = "com.experiencingyah.bibliCal"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.4"
+        versionCode = 3
+        versionName = "0.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -29,7 +29,7 @@ android {
             if (keystorePropertiesFile.exists()) {
                 val keystoreProperties = Properties()
                 keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-                storeFile = file(keystoreProperties["storeFile"] as String)
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
                 storePassword = keystoreProperties["storePassword"] as String
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
