@@ -60,7 +60,8 @@ android {
     
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true  // Enable R8/ProGuard for code obfuscation and size reduction
+            isShrinkResources = true  // Remove unused resources
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -71,9 +72,28 @@ android {
 }
 ```
 
-## Step 3: Build the Release APK
+## Step 3: Build the Release Bundle (AAB) for Google Play
 
-Run this command in the project root:
+For Google Play Store uploads, build an Android App Bundle:
+
+```bash
+./gradlew bundleRelease
+```
+
+The AAB will be created at:
+`app/build/outputs/bundle/release/app-release.aab`
+
+**Important**: After building, you'll also need to upload the deobfuscation file (mapping.txt) to Google Play Console. This file is located at:
+`app/build/outputs/mapping/release/mapping.txt`
+
+When uploading your AAB to Google Play Console:
+1. Upload the AAB file
+2. In the "App bundle explorer" or "Release" section, upload the `mapping.txt` file for deobfuscation
+3. Native debug symbols are automatically included in the AAB (if available from dependencies)
+
+## Step 3a: Build the Release APK (Alternative)
+
+If you need an APK instead of an AAB, run:
 
 ```bash
 ./gradlew assembleRelease

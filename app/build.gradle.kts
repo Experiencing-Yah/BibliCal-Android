@@ -16,8 +16,8 @@ android {
         applicationId = "com.experiencingyah.bibliCal"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -45,12 +45,20 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+
+    // Enable native debug symbols for crash reporting
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
         }
     }
 
@@ -64,6 +72,19 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    // Configure bundle to include native debug symbols
+    bundle {
+        language {
+            enableSplit = false
+        }
+        density {
+            enableSplit = true
+        }
+        abi {
+            enableSplit = true
+        }
     }
 }
 
