@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "415295384168",
+    "project_id": "biblical-analytics",
+    "storage_bucket": "biblical-analytics.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:415295384168:android:bb0ab6ccb2e547481729dd",
+        "android_client_info": {
+          "package_name": "com.experiencingyah.bibliCal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBCwod9QKdMfVcsVry14NYkibkp52-oZtU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:415295384168:android:d5bb8a4b83315eb41729dd",
+        "android_client_info": {
+          "package_name": "com.experiencingyah.biblical"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBCwod9QKdMfVcsVry14NYkibkp52-oZtU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

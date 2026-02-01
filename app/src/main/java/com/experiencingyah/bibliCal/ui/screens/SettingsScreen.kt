@@ -2,6 +2,7 @@ package com.experiencingyah.bibliCal.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.location.Location
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +41,7 @@ import com.google.android.gms.tasks.Tasks
 import com.experiencingyah.bibliCal.calendar.AllDayCalendarEvent
 import com.experiencingyah.bibliCal.calendar.CalendarExporter
 import com.experiencingyah.bibliCal.data.LunarRepository
+import com.experiencingyah.bibliCal.data.settings.SettingsRepository
 import com.experiencingyah.bibliCal.data.settings.MonthNamingMode
 import com.experiencingyah.bibliCal.ui.vm.SettingsViewModel
 import java.time.LocalDate
@@ -52,22 +54,36 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by vm.state.collectAsState()
+    val settingsRepo = remember { SettingsRepository(context) }
 
     var monthModeMenuOpen by remember { mutableStateOf(false) }
     var firstfruitsMenuOpen by remember { mutableStateOf(false) }
     var calendarMenuOpen by remember { mutableStateOf(false) }
     var calendars by remember { mutableStateOf(emptyList<com.experiencingyah.bibliCal.calendar.DeviceCalendar>()) }
     var exportStatus by remember { mutableStateOf<String?>(null) }
+    
+    // Track calendar permission state
+    var hasCalendarPermission by remember { mutableStateOf(false) }
+    
+    // Check calendar permission on launch
+    LaunchedEffect(Unit) {
+        val canRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        val canWrite = ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        hasCalendarPermission = canRead && canWrite
+    }
 
     val notifPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         // no-op; UI reads state from toggles
     }
 
-    val calendarPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
-        // refresh list
-        val canRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-        val canWrite = ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
-        if (canRead && canWrite) {
+    val calendarPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+        // Update permission state and refresh list
+        val canRead = permissions[Manifest.permission.READ_CALENDAR] == true || 
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        val canWrite = permissions[Manifest.permission.WRITE_CALENDAR] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        hasCalendarPermission = canRead && canWrite
+        if (hasCalendarPermission) {
             scope.launch { calendars = CalendarExporter(context).listCalendars() }
         }
     }
@@ -240,98 +256,109 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
                 Text("Calendar Export", style = MaterialTheme.typography.titleLarge)
                 Text("Exports feast days into a selected device calendar.", style = MaterialTheme.typography.bodySmall)
 
-                Button(onClick = {
-                    val perms = arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
-                    calendarPermLauncher.launch(perms)
-                }) { Text("Grant calendar permission", color = androidx.compose.ui.graphics.Color.White) }
-
-                Button(onClick = {
-                    val canRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-                    val canWrite = ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
-                    if (!canRead || !canWrite) {
-                        exportStatus = "Grant calendar permission first."
-                        return@Button
+                if (!hasCalendarPermission) {
+                    // Show permission request UI
+                    Text(
+                        "Calendar permission is required to export feast days to your device calendar.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(onClick = {
+                        val perms = arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+                        calendarPermLauncher.launch(perms)
+                    }) { Text("Grant Calendar Permission", color = androidx.compose.ui.graphics.Color.White) }
+                } else {
+                    // Permission granted - show calendar selection and export options
+                    Button(onClick = {
+                        scope.launch { calendars = CalendarExporter(context).listCalendars() }
+                        calendarMenuOpen = true
+                    }) { 
+                        Text(
+                            if (state.selectedCalendarId == -1L) "Pick a calendar" 
+                            else "Calendar ID: ${state.selectedCalendarId}", 
+                            color = androidx.compose.ui.graphics.Color.White
+                        ) 
                     }
-                    scope.launch { calendars = CalendarExporter(context).listCalendars() }
-                    calendarMenuOpen = true
-                }) { Text(if (state.selectedCalendarId == -1L) "Pick a calendar" else "Calendar ID: ${state.selectedCalendarId}", color = androidx.compose.ui.graphics.Color.White) }
 
-                DropdownMenu(expanded = calendarMenuOpen, onDismissRequest = { calendarMenuOpen = false }) {
-                    calendars.forEach { cal ->
-                        DropdownMenuItem(
-                            text = { Text("${cal.displayName} (${cal.accountName})") },
+                    DropdownMenu(expanded = calendarMenuOpen, onDismissRequest = { calendarMenuOpen = false }) {
+                        calendars.forEach { cal ->
+                            DropdownMenuItem(
+                                text = { Text("${cal.displayName} (${cal.accountName})") },
+                                onClick = {
+                                    vm.setSelectedCalendarId(cal.id)
+                                    calendarMenuOpen = false
+                                }
+                            )
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = state.selectedCalendarId != -1L && state.hasAnchor,
                             onClick = {
-                                vm.setSelectedCalendarId(cal.id)
-                                calendarMenuOpen = false
+                                exportStatus = null
+                                scope.launch {
+                                    val repo = LunarRepository(context)
+                                    val year = repo.getToday()?.yearNumber
+                                    if (year == null) {
+                                        exportStatus = "No year available; set an anchor first."
+                                        return@launch
+                                    }
+                                    val feasts = repo.feastDaysForYear(year)
+                                    val months = repo.monthsForYear(year)
+                                    val events = buildList {
+                                        addAll(months.map { AllDayCalendarEvent("Month ${it.monthNumber} begins", it.startDate, "Biblical Month") })
+                                        addAll(feasts.map { AllDayCalendarEvent(it.title, it.date, "Biblical Month (Year $year)") })
+                                    }
+                                    val created = withContext(Dispatchers.IO) {
+                                        CalendarExporter(context).exportAllDayEvents(state.selectedCalendarId, events)
+                                    }
+                                    exportStatus = "Exported $created events for Year $year."
+                                }
                             }
+                        ) { Text("Export current year feasts", color = androidx.compose.ui.graphics.Color.White) }
+
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = state.selectedCalendarId != -1L && state.hasAnchor,
+                            onClick = {
+                                exportStatus = null
+                                scope.launch {
+                                    val repo = LunarRepository(context)
+                                    val year = repo.getToday()?.yearNumber?.plus(1)
+                                    if (year == null) {
+                                        exportStatus = "No year available; set an anchor first."
+                                        return@launch
+                                    }
+                                    val feasts = repo.feastDaysForYear(year)
+                                    val months = repo.monthsForYear(year)
+                                    val events = buildList {
+                                        addAll(months.map { AllDayCalendarEvent("Month ${it.monthNumber} begins", it.startDate, "Biblical Month") })
+                                        addAll(feasts.map { AllDayCalendarEvent(it.title, it.date, "Biblical Month (Year $year)") })
+                                    }
+                                    val created = withContext(Dispatchers.IO) {
+                                        CalendarExporter(context).exportAllDayEvents(state.selectedCalendarId, events)
+                                    }
+                                    exportStatus = "Exported $created events for Year $year."
+                                }
+                            }
+                        ) { Text("Export next year feasts", color = androidx.compose.ui.graphics.Color.White) }
+                    }
+                    
+                    if (state.selectedCalendarId == -1L) {
+                        Text(
+                            "Select a calendar above to enable export.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else if (!state.hasAnchor) {
+                        Text(
+                            "Set a date from the Today tab to enable export.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = state.selectedCalendarId != -1L && state.hasAnchor,
-                        onClick = {
-                            exportStatus = null
-                            scope.launch {
-                                val canRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-                                val canWrite = ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
-                                if (!canRead || !canWrite) {
-                                    exportStatus = "Grant calendar permission first."
-                                    return@launch
-                                }
-                                val repo = LunarRepository(context)
-                                val year = repo.getToday()?.yearNumber
-                                if (year == null) {
-                                    exportStatus = "No year available; set an anchor first."
-                                    return@launch
-                                }
-                                val feasts = repo.feastDaysForYear(year)
-                                val months = repo.monthsForYear(year)
-                                val events = buildList {
-                                    addAll(months.map { AllDayCalendarEvent("Month ${it.monthNumber} begins", it.startDate, "Biblical Month") })
-                                    addAll(feasts.map { AllDayCalendarEvent(it.title, it.date, "Biblical Month (Year $year)") })
-                                }
-                                val created = withContext(Dispatchers.IO) {
-                                    CalendarExporter(context).exportAllDayEvents(state.selectedCalendarId, events)
-                                }
-                                exportStatus = "Exported $created events for Year $year."
-                            }
-                        }
-                    ) { Text("Export current year feasts", color = androidx.compose.ui.graphics.Color.White) }
-
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = state.selectedCalendarId != -1L && state.hasAnchor,
-                        onClick = {
-                            exportStatus = null
-                            scope.launch {
-                                val canRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-                                val canWrite = ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
-                                if (!canRead || !canWrite) {
-                                    exportStatus = "Grant calendar permission first."
-                                    return@launch
-                                }
-                                val repo = LunarRepository(context)
-                                val year = repo.getToday()?.yearNumber?.plus(1)
-                                if (year == null) {
-                                    exportStatus = "No year available; set an anchor first."
-                                    return@launch
-                                }
-                                val feasts = repo.feastDaysForYear(year)
-                                val months = repo.monthsForYear(year)
-                                val events = buildList {
-                                    addAll(months.map { AllDayCalendarEvent("Month ${it.monthNumber} begins", it.startDate, "Biblical Month") })
-                                    addAll(feasts.map { AllDayCalendarEvent(it.title, it.date, "Biblical Month (Year $year)") })
-                                }
-                                val created = withContext(Dispatchers.IO) {
-                                    CalendarExporter(context).exportAllDayEvents(state.selectedCalendarId, events)
-                                }
-                                exportStatus = "Exported $created events for Year $year."
-                            }
-                        }
-                    ) { Text("Export next year feasts", color = androidx.compose.ui.graphics.Color.White) }
                 }
 
                 exportStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -365,6 +392,13 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
             // Get sunset info
             val todayDate = java.time.LocalDate.now()
             val zoneId = java.time.ZoneId.systemDefault()
+            val cached = settingsRepo.getCachedLocation()
+            val cachedLocation = cached?.let {
+                Location("cached").apply {
+                    latitude = it.first
+                    longitude = it.second
+                }
+            }
             try {
                 val fusedLocationClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
                 val cancellationTokenSource = com.google.android.gms.tasks.CancellationTokenSource()
@@ -373,15 +407,24 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
                     cancellationTokenSource.token
                 )
                 val location = Tasks.await(locationTask, 5, java.util.concurrent.TimeUnit.SECONDS)
+                val locationToUse = location ?: cachedLocation
                 
-                if (location != null) {
+                if (locationToUse != null) {
                     val todaySunset = com.experiencingyah.bibliCal.util.SunsetCalculator.calculateSunsetTime(
-                        todayDate, location.latitude, location.longitude, zoneId
+                        todayDate, locationToUse.latitude, locationToUse.longitude, zoneId
                     )
                     val now = java.time.ZonedDateTime.now(zoneId)
                     val isAfterSunset = todaySunset != null && now.isAfter(todaySunset)
-                    val daytimeDate = todayDate.toString()
-                    val sunsetDate = if (isAfterSunset) todayDate.toString() else todayDate.minusDays(1).toString()
+                    val daytimeDate = if (isAfterSunset) {
+                        todayDate.plusDays(1).toString()
+                    } else {
+                        todayDate.toString()
+                    }
+                    val sunsetDate = if (isAfterSunset) {
+                        todayDate.toString()
+                    } else {
+                        todayDate.minusDays(1).toString()
+                    }
                     datePickerSunsetInfo = Triple(isAfterSunset, daytimeDate, sunsetDate)
                 } else {
                     datePickerSunsetInfo = Triple(false, todayDate.toString(), todayDate.minusDays(1).toString())
@@ -401,14 +444,9 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
             onConfirm = { y, m, d ->
                 scope.launch {
                     val repo = LunarRepository(context)
-                    // Automatically use the appropriate date based on context (after sunset or not)
-                    val referenceDate = if (isAfterSunset) {
-                        // After sunset: use sunset date (today's date, since biblical day started at sunset)
-                        sunsetDate?.let { java.time.LocalDate.parse(it) } ?: java.time.LocalDate.now()
-                    } else {
-                        // Before sunset: use daytime date (today's date)
-                        daytimeDate?.let { java.time.LocalDate.parse(it) } ?: java.time.LocalDate.now()
-                    }
+                    // Use the biblical reference date (tomorrow if after sunset)
+                    val referenceDate = daytimeDate?.let { java.time.LocalDate.parse(it) }
+                        ?: java.time.LocalDate.now()
                     
                     // Calculate month start: if day X occurs on referenceDate, month started (day-1) days earlier
                     val monthStart = referenceDate.minusDays((d - 1).toLong())

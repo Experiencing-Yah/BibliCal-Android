@@ -1,6 +1,8 @@
 package com.experiencingyah.bibliCal.widgets
 
 import android.Manifest
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
@@ -35,6 +37,25 @@ data class WidgetData(
 )
 
 object WidgetHelper {
+    /**
+     * Check if the user has any of the app's widgets installed on their home screen.
+     */
+    fun hasAnyWidgetInstalled(context: Context): Boolean {
+        val appWidgetManager = AppWidgetManager.getInstance(context)
+        
+        val combinedIds = appWidgetManager.getAppWidgetIds(
+            ComponentName(context, CombinedWidgetProvider::class.java)
+        )
+        val dateIds = appWidgetManager.getAppWidgetIds(
+            ComponentName(context, DateWidgetProvider::class.java)
+        )
+        val shabbatIds = appWidgetManager.getAppWidgetIds(
+            ComponentName(context, ShabbatWidgetProvider::class.java)
+        )
+        
+        return combinedIds.isNotEmpty() || dateIds.isNotEmpty() || shabbatIds.isNotEmpty()
+    }
+    
     fun getWidgetData(context: Context): WidgetData = runBlocking {
         withContext(Dispatchers.IO) {
             // Try to get location from cache first (fast and reliable for widgets)

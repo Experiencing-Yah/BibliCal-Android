@@ -35,6 +35,9 @@ class SettingsRepository(private val context: Context) {
         val CACHED_LATITUDE = doublePreferencesKey("cached_latitude")
         val CACHED_LONGITUDE = doublePreferencesKey("cached_longitude")
         val CACHED_LOCATION_TIMESTAMP = longPreferencesKey("cached_location_timestamp")
+        
+        // Widget banner dismissal tracking (reappears on app update)
+        val WIDGET_BANNER_DISMISSED_VERSION = stringPreferencesKey("widget_banner_dismissed_version")
     }
 
     val statusNotificationEnabled: Flow<Boolean> =
@@ -202,6 +205,74 @@ class SettingsRepository(private val context: Context) {
     }
 
     /**
+     * Cascade projected month lengths from a starting year-month forward using alternating 29/30 pattern.
+     * This rewrites all future projected months, discarding any existing overrides.
+     * 
+     * @param startYear The year of the month that triggered the cascade
+     * @param startMonth The month number (1-13) that triggered the cascade
+     * @param startLength The length (29 or 30) of the starting month
+     * @param yearsToProject How many years into the future to project (default 10)
+     */
+    suspend fun cascadeProjectedMonthLengths(
+        startYear: Int,
+        startMonth: Int,
+        startLength: Int,
+        yearsToProject: Int = 10
+    ) {
+        context.dataStore.edit { prefs ->
+            val currentJsonStr = prefs[Keys.PROJECTED_MONTH_LENGTHS] ?: "{}"
+            val json = try {
+                org.json.JSONObject(currentJsonStr)
+            } catch (e: Exception) {
+                org.json.JSONObject()
+            }
+            
+            // Remove all entries at or after the starting year-month
+            val keysToRemove = mutableListOf<String>()
+            json.keys().forEach { key ->
+                val parts = key.split("-")
+                if (parts.size == 2) {
+                    val keyYear = parts[0].toIntOrNull()
+                    val keyMonth = parts[1].toIntOrNull()
+                    if (keyYear != null && keyMonth != null) {
+                        // Remove if this key is at or after the start point
+                        if (keyYear > startYear || (keyYear == startYear && keyMonth >= startMonth)) {
+                            keysToRemove.add(key)
+                        }
+                    }
+                }
+            }
+            keysToRemove.forEach { json.remove(it) }
+            
+            // Now write alternating lengths starting from startYear-startMonth
+            var currentYear = startYear
+            var currentMonth = startMonth
+            var currentLength = startLength
+            val endYear = startYear + yearsToProject
+            
+            while (currentYear <= endYear) {
+                val key = "$currentYear-$currentMonth"
+                json.put(key, currentLength.toString())
+                
+                // Alternate for next month
+                currentLength = if (currentLength == 29) 30 else 29
+                
+                // Move to next month
+                currentMonth++
+                if (currentMonth > 13) {
+                    currentMonth = 1
+                    currentYear++
+                } else if (currentMonth == 13) {
+                    // Month 13 only exists in some years; always include it in projections
+                    // and let the actual month calculation decide if it's used
+                }
+            }
+            
+            prefs[Keys.PROJECTED_MONTH_LENGTHS] = json.toString()
+        }
+    }
+
+    /**
      * Cache location for widget use. Location is considered valid for 24 hours.
      */
     suspend fun cacheLocation(latitude: Double, longitude: Double) {
@@ -234,6 +305,21 @@ class SettingsRepository(private val context: Context) {
         }
         
         return Pair(lat, lon)
+    }
+
+    /**
+     * Get the app version at which the widget banner was dismissed.
+     * Returns null if never dismissed.
+     */
+    suspend fun getWidgetBannerDismissedVersion(): String? {
+        return context.dataStore.data.first()[Keys.WIDGET_BANNER_DISMISSED_VERSION]
+    }
+
+    /**
+     * Record that the widget banner was dismissed for the given app version.
+     */
+    suspend fun setWidgetBannerDismissedVersion(versionName: String) {
+        context.dataStore.edit { it[Keys.WIDGET_BANNER_DISMISSED_VERSION] = versionName }
     }
 }
 

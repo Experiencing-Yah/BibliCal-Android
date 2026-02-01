@@ -37,6 +37,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.experiencingyah.bibliCal.data.LunarRepository
+import com.experiencingyah.bibliCal.data.settings.SettingsRepository
 import com.experiencingyah.bibliCal.ui.vm.WelcomeStep
 import com.experiencingyah.bibliCal.ui.vm.WelcomeViewModel
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -56,6 +57,7 @@ fun WelcomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember { LunarRepository(context) }
+    val settings = remember { SettingsRepository(context) }
     
     var showDatePicker by remember { mutableStateOf(false) }
     var datePickerType by remember { mutableStateOf<DatePickerType?>(null) }
@@ -63,6 +65,17 @@ fun WelcomeScreen(
     var selectedMonth by remember { mutableStateOf(1) }
     var selectedDay by remember { mutableStateOf(1) }
     var selectedGregorianDate by remember { mutableStateOf(LocalDate.now()) }
+    var cachedLocation by remember { mutableStateOf<Location?>(null) }
+    
+    LaunchedEffect(Unit) {
+        val cached = settings.getCachedLocation()
+        if (cached != null) {
+            cachedLocation = Location("cached").apply {
+                latitude = cached.first
+                longitude = cached.second
+            }
+        }
+    }
     
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -76,7 +89,10 @@ fun WelcomeScreen(
         }
     }
     
-    // Request location when moving to estimate step
+    // Track if user needs to grant location permission
+    var needsLocationPermission by remember { mutableStateOf(false) }
+    
+    // Check location permission status when moving to estimate step
     LaunchedEffect(state.currentStep) {
         if (state.currentStep == WelcomeStep.ESTIMATE_FROM_LOCATION && state.location == null) {
             val hasFineLocation = ContextCompat.checkSelfPermission(
@@ -91,13 +107,9 @@ fun WelcomeScreen(
             if (hasFineLocation || hasCoarseLocation) {
                 requestLocation(vm, context)
             } else {
-                vm.setLoadingLocation(true)
-                locationPermissionLauncher.launch(
-                    arrayOf(
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION
-                    )
-                )
+                // Don't auto-request; show rationale first
+                needsLocationPermission = true
+                vm.setLoadingLocation(false)
             }
         }
     }
@@ -180,25 +192,53 @@ fun WelcomeScreen(
                     estimatedMonth = state.estimatedMonth,
                     estimatedDay = state.estimatedDay,
                     errorMessage = state.errorMessage,
+                    needsLocationPermission = needsLocationPermission,
+                    onGrantLocationPermission = {
+                        vm.setLoadingLocation(true)
+                        needsLocationPermission = false
+                        locationPermissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            )
+                        )
+                    },
                     onUseEstimate = { year, month, day ->
                         // Use setBiblicalDate with today as reference and the edited day
                         // Pass location so it can check if it's after sunset
                         val today = LocalDate.now()
-                        val location = state.location
-                        vm.setBiblicalDate(year, month, day, today, location)
-                        // Wait a moment for the anchor to be set, then navigate
+                        val location = state.location ?: cachedLocation
+                        val referenceDate = if (location != null) {
+                            val now = java.time.ZonedDateTime.now(java.time.ZoneId.systemDefault())
+                            val todaySunset = com.experiencingyah.bibliCal.util.SunsetCalculator.calculateSunsetTime(
+                                today,
+                                location.latitude,
+                                location.longitude,
+                                java.time.ZoneId.systemDefault()
+                            )
+                            if (todaySunset != null && now.isAfter(todaySunset)) {
+                                today.plusDays(1)
+                            } else {
+                                today
+                            }
+                        } else {
+                            today
+                        }
                         scope.launch {
-                            kotlinx.coroutines.delay(500)
+                            vm.setBiblicalDate(year, month, day, referenceDate).join()
                             navController.navigate("today") {
                                 popUpTo("welcome") { inclusive = true }
                             }
                         }
                     },
                     onSetManually = {
-                        datePickerType = DatePickerType.NewMoonDate
-                        selectedYear = repo.calculateDefaultYear()
-                        selectedMonth = 1
-                        selectedDay = 1
+                        datePickerType = DatePickerType.BiblicalDate
+                        val estimateDate = state.estimatedNewMoonDate ?: LocalDate.now()
+                        val estimateMonth = state.estimatedMonth ?: 1
+                        val estimateDay = state.estimatedDay ?: 1
+                        selectedYear = repo.calculateDefaultYearForMonth(estimateMonth, estimateDate)
+                        selectedMonth = estimateMonth
+                        selectedDay = estimateDay
                         selectedGregorianDate = LocalDate.now()
                         showDatePicker = true
                     }
@@ -223,7 +263,7 @@ fun WelcomeScreen(
         
         if (showDatePicker) {
             // Check if it's after sunset to show correct context
-            val location = state.location
+            val location = state.location ?: cachedLocation
             var isAfterSunset = false
             var daytimeDate = selectedGregorianDate.toString()
             var sunsetDate: String? = null
@@ -250,26 +290,29 @@ fun WelcomeScreen(
                     }
                 }
             }
-            
             DatePickerDialog(
                 onDismiss = { showDatePicker = false },
                 onConfirm = { year, month, day ->
-                    when (datePickerType) {
-                        DatePickerType.BiblicalDate -> {
-                            // Pass location so it can check if it's after sunset
-                            vm.setBiblicalDate(year, month, day, selectedGregorianDate, location)
-                        }
-                        DatePickerType.NewMoonDate -> {
-                            // For new moon date, the selected date is when first sliver was visible
-                            // The month starts at sunset on that date
-                            vm.setNewMoonDate(selectedGregorianDate, year, month)
-                        }
-                        null -> {}
-                    }
                     showDatePicker = false
                     // Navigate after setting date
                     scope.launch {
-                        kotlinx.coroutines.delay(500)
+                        when (datePickerType) {
+                            DatePickerType.BiblicalDate -> {
+                                // Pass location so it can check if it's after sunset
+                                val referenceDate = if (isAfterSunset) {
+                                    selectedGregorianDate.plusDays(1)
+                                } else {
+                                    selectedGregorianDate
+                                }
+                            vm.setBiblicalDate(year, month, day, referenceDate).join()
+                            }
+                            DatePickerType.NewMoonDate -> {
+                                // For new moon date, the selected date is when first sliver was visible
+                                // The month starts at sunset on that date
+                                vm.setNewMoonDate(selectedGregorianDate, year, month).join()
+                            }
+                            null -> {}
+                        }
                         navController.navigate("today") {
                             popUpTo("welcome") { inclusive = true }
                         }
@@ -380,27 +423,18 @@ private fun Step3EstimateFromLocation(
     estimatedMonth: Int?,
     estimatedDay: Int?,
     errorMessage: String?,
+    needsLocationPermission: Boolean,
+    onGrantLocationPermission: () -> Unit,
     onUseEstimate: (Int, Int, Int) -> Unit,
     onSetManually: () -> Unit
 ) {
     val context = LocalContext.current
     val repo = remember { LunarRepository(context) }
-    val defaultYear = remember { repo.calculateDefaultYear() }
-    var selectedYear by remember { mutableStateOf(defaultYear) }
-    var selectedMonth by remember { mutableStateOf(estimatedMonth ?: 1) }
-    var selectedDay by remember { mutableStateOf(estimatedDay ?: 1) }
-    
-    // Update selected month and day when estimated values change
-    LaunchedEffect(estimatedMonth) {
-        if (estimatedMonth != null) {
-            selectedMonth = estimatedMonth
-        }
-    }
-    
-    LaunchedEffect(estimatedDay) {
-        if (estimatedDay != null) {
-            selectedDay = estimatedDay
-        }
+    val displayMonth = estimatedMonth ?: 1
+    val displayDay = estimatedDay ?: 1
+    val baseDate = estimatedDate ?: LocalDate.now()
+    val displayYear = remember(displayMonth, baseDate) {
+        repo.calculateDefaultYearForMonth(displayMonth, baseDate)
     }
     
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -416,10 +450,43 @@ private fun Step3EstimateFromLocation(
             )
             
             when {
+                needsLocationPermission -> {
+                    // Show location permission rationale
+                    Text(
+                        text = "To calculate when the biblical day begins, we need your location to determine local sunset times.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    Text(
+                        text = "Your location is stored only on your device and is never transmitted.",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    Spacer(Modifier.height(8.dp))
+                    
+                    Button(
+                        onClick = onGrantLocationPermission,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Grant Location Access", color = androidx.compose.ui.graphics.Color.White)
+                    }
+                    
+                    Button(
+                        onClick = onSetManually,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Set date manually instead", color = androidx.compose.ui.graphics.Color.White)
+                    }
+                }
+                
                 isLoadingLocation -> {
                     CircularProgressIndicator()
                     Text(
-                        text = "Requesting location permission...",
+                        text = "Requesting location...",
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center
                     )
@@ -457,53 +524,27 @@ private fun Step3EstimateFromLocation(
                     
                     Spacer(Modifier.height(16.dp))
                     
-                    // Year, month, and day selection for the estimate
                     Column(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            "Select biblical year, month, and day:",
+                            "Estimated biblical date:",
                             style = MaterialTheme.typography.bodyMedium
                         )
                         
-                        androidx.compose.material3.TextField(
-                            value = selectedYear.toString(),
-                            onValueChange = { newValue ->
-                                if (newValue.all { it.isDigit() }) {
-                                    selectedYear = newValue.toIntOrNull() ?: defaultYear
-                                }
-                            },
-                            label = { Text("Year") },
-                            modifier = Modifier.fillMaxWidth()
+                        Text(
+                            text = "Year $displayYear",
+                            style = MaterialTheme.typography.bodyLarge
                         )
-                        
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            androidx.compose.material3.TextField(
-                                value = selectedMonth.toString(),
-                                onValueChange = { newValue ->
-                                    if (newValue.all { it.isDigit() }) {
-                                        selectedMonth = newValue.toIntOrNull()?.coerceIn(1, 13) ?: 1
-                                    }
-                                },
-                                label = { Text("Month (1-13)") },
-                                modifier = Modifier.weight(1f)
-                            )
-                            
-                            androidx.compose.material3.TextField(
-                                value = selectedDay.toString(),
-                                onValueChange = { newValue ->
-                                    if (newValue.all { it.isDigit() }) {
-                                        selectedDay = newValue.toIntOrNull()?.coerceIn(1, 30) ?: 1
-                                    }
-                                },
-                                label = { Text("Day (1-30)") },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+                        Text(
+                            text = "Month $displayMonth",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Day $displayDay",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
                     }
                     
                     Spacer(Modifier.height(8.dp))
@@ -511,7 +552,7 @@ private fun Step3EstimateFromLocation(
                     Button(
                         onClick = {
                             // Use the edited biblical date (year, month, day)
-                            onUseEstimate(selectedYear, selectedMonth, selectedDay)
+                            onUseEstimate(displayYear, displayMonth, displayDay)
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {

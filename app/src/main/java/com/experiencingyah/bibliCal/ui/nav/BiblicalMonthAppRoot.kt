@@ -29,6 +29,7 @@ import com.experiencingyah.bibliCal.ui.screens.CalendarScreen
 import com.experiencingyah.bibliCal.ui.screens.SettingsScreen
 import com.experiencingyah.bibliCal.ui.screens.TodayScreen
 import com.experiencingyah.bibliCal.ui.screens.WelcomeScreen
+import com.experiencingyah.bibliCal.ui.screens.WidgetShowcaseScreen
 import kotlinx.coroutines.launch
 
 @Composable
@@ -56,8 +57,8 @@ fun BiblicalMonthAppRoot() {
         NavItem("settings", "Settings", Icons.Default.Settings),
     )
 
-    // Only show bottom bar if not on welcome screen
-    val showBottomBar = currentRoute != "welcome" && currentRoute != null
+    // Only show bottom bar if not on welcome or widget showcase screens
+    val showBottomBar = currentRoute != "welcome" && currentRoute != "widget_showcase" && currentRoute != null
 
     Scaffold(
         bottomBar = {
@@ -92,9 +93,18 @@ fun BiblicalMonthAppRoot() {
                 modifier = Modifier.padding(innerPadding),
             ) {
                 composable("welcome") { WelcomeScreen(navController = navController) }
-                composable("today") { TodayScreen() }
+                composable("today") { 
+                    TodayScreen(
+                        onNavigateToWidgetShowcase = { navController.navigate("widget_showcase") }
+                    ) 
+                }
                 composable("calendar") { CalendarScreen() }
                 composable("settings") { SettingsScreen() }
+                composable("widget_showcase") {
+                    WidgetShowcaseScreen(
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
             }
         }
     }

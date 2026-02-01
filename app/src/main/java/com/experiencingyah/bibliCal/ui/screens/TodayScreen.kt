@@ -25,12 +25,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,7 +62,10 @@ import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 
 @Composable
-fun TodayScreen(vm: TodayViewModel = viewModel()) {
+fun TodayScreen(
+    vm: TodayViewModel = viewModel(),
+    onNavigateToWidgetShowcase: () -> Unit = {}
+) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -65,12 +75,16 @@ fun TodayScreen(vm: TodayViewModel = viewModel()) {
     var selectedDay by remember { mutableStateOf(1) }
     var selectedGregorianDate by remember { mutableStateOf(LocalDate.now()) }
 
+    // Track if user needs to grant location permission
+    var showLocationRationale by remember { mutableStateOf(false) }
+    
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         ) {
+            showLocationRationale = false
             requestLocation(vm, context)
         }
     }
@@ -88,12 +102,8 @@ fun TodayScreen(vm: TodayViewModel = viewModel()) {
         if (hasFineLocation || hasCoarseLocation) {
             requestLocation(vm, context)
         } else {
-            locationPermissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                )
-            )
+            // Don't auto-request; show rationale first
+            showLocationRationale = true
         }
     }
 
@@ -115,6 +125,29 @@ fun TodayScreen(vm: TodayViewModel = viewModel()) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Today", style = MaterialTheme.typography.headlineMedium)
+
+        // Location permission rationale banner
+        if (showLocationRationale) {
+            LocationPermissionBanner(
+                onGrantPermission = {
+                    locationPermissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+                    )
+                },
+                onDismiss = { showLocationRationale = false }
+            )
+        }
+
+        // Widget promotion banner
+        if (state.showWidgetBanner) {
+            WidgetPromoBanner(
+                onTap = { onNavigateToWidgetShowcase() },
+                onDismiss = { vm.dismissWidgetBanner() }
+            )
+        }
 
         if (state.isLoading) {
             // Skeleton loading state
@@ -289,14 +322,8 @@ fun TodayScreen(vm: TodayViewModel = viewModel()) {
             DatePickerDialog(
                 onDismiss = { showDatePicker = false },
                 onConfirm = { year, month, day ->
-                    // Automatically use the appropriate date based on context (after sunset or not)
-                    val referenceDate = if (state.isAfterSunset) {
-                        // After sunset: use sunset date (today's date, since biblical day started at sunset)
-                        state.gregorianSunsetDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
-                    } else {
-                        // Before sunset: use daytime date (today's date)
-                        state.gregorianDaytimeDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
-                    }
+                    // Use the biblical reference date (tomorrow if after sunset)
+                    val referenceDate = state.gregorianDaytimeDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
                     vm.setCurrentDate(year, month, day, referenceDate)
                     showDatePicker = false
                 },
@@ -327,20 +354,14 @@ fun DatePickerDialog(
     val defaultYear = remember { repo.calculateDefaultYear() }
     
     // Use string states to allow intermediate values while typing
-    var yearText by remember { mutableStateOf(initialYear.toString()) }
-    var monthText by remember { mutableStateOf(initialMonth.toString()) }
-    var dayText by remember { mutableStateOf(initialDay.toString()) }
-    
-    LaunchedEffect(Unit) {
-        val currentDate = repo.getToday()
-        if (currentDate != null) {
-            yearText = currentDate.yearNumber.toString()
-            monthText = currentDate.monthNumber.toString()
-            dayText = currentDate.dayOfMonth.toString()
-        } else if (initialYear == 2024) {
-            yearText = defaultYear.toString()
-        }
+    val initialYearValue = if (initialYear == 2024) {
+        repo.calculateDefaultYearForMonth(initialMonth)
+    } else {
+        initialYear
     }
+    var yearText by remember(initialYearValue) { mutableStateOf(initialYearValue.toString()) }
+    var monthText by remember(initialMonth) { mutableStateOf(initialMonth.toString()) }
+    var dayText by remember(initialDay) { mutableStateOf(initialDay.toString()) }
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
@@ -367,6 +388,11 @@ fun DatePickerDialog(
                             // Only allow digits, allow empty string while typing
                             if (newValue.all { it.isDigit() }) {
                                 monthText = newValue
+                                val parsedMonth = newValue.toIntOrNull()?.coerceIn(1, 13) ?: 1
+                                val newDefaultYear = repo.calculateDefaultYearForMonth(parsedMonth).toString()
+                                if (yearText == initialYearValue.toString() || yearText == defaultYear.toString()) {
+                                    yearText = newDefaultYear
+                                }
                             }
                         },
                         label = { Text("Month") },
@@ -408,8 +434,11 @@ fun DatePickerDialog(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    if (isAfterSunset) "Using sunset date (evening) - biblical day started at sunset" 
-                    else "Using daytime date - biblical day will start at sunset",
+                    if (isAfterSunset) {
+                        "Using daytime date (tomorrow) for the current biblical day"
+                    } else {
+                        "Using daytime date (today) for the current biblical day"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -418,8 +447,8 @@ fun DatePickerDialog(
         confirmButton = {
             Button(onClick = {
                 // Parse and validate values on confirm
-                val parsedYear = yearText.toIntOrNull() ?: defaultYear
                 val parsedMonth = monthText.toIntOrNull()?.coerceIn(1, 13) ?: 1
+                val parsedYear = yearText.toIntOrNull() ?: repo.calculateDefaultYearForMonth(parsedMonth)
                 val parsedDay = dayText.toIntOrNull()?.coerceIn(1, 30) ?: 1
                 onConfirm(parsedYear, parsedMonth, parsedDay)
             }) {
@@ -432,6 +461,112 @@ fun DatePickerDialog(
             }
         }
     )
+}
+
+@Composable
+private fun LocationPermissionBanner(
+    onGrantPermission: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        "Location Needed for Sunset Times",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Text(
+                        "The biblical day begins at sunset. Grant location access to calculate accurate sunset times for your area.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                    )
+                    Text(
+                        "Your location stays on your device and is never transmitted.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss",
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+            Button(
+                onClick = onGrantPermission,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Grant Location Access", color = androidx.compose.ui.graphics.Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun WidgetPromoBanner(
+    onTap: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onTap() },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    "Add a Widget",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    "See the biblical date on your home screen",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                )
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Dismiss",
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+    }
 }
 
 @Composable

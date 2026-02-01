@@ -28,19 +28,28 @@ class LunarRepository(context: Context) {
      * Actually, we need to check if we're after the biblical new year (Month 1 Day 1).
      * For simplicity, we'll use: if after Jan 1, use 4000 + current year, else 3999 + current year.
      */
-    fun calculateDefaultYear(): Int {
-        val now = LocalDate.now()
-        val currentYear = now.year
-        // If it's Jan 1, use 3999, otherwise use 4000
-        // Actually, the user wants: 4000 + current year if after first day of biblical new year until Dec 31,
-        // or 3999 if Jan 1 until end of biblical year.
-        // Since we don't know the biblical new year yet, we'll default to 4000 + current year for now.
-        // The user can adjust this manually.
-        return if (now.monthValue == 1 && now.dayOfMonth == 1) {
+    fun calculateDefaultYear(baseDate: LocalDate = LocalDate.now()): Int {
+        val currentYear = baseDate.year
+        return if (isBeforeApproxBiblicalNewYear(baseDate)) {
             3999 + currentYear
         } else {
             4000 + currentYear
         }
+    }
+
+    fun calculateDefaultYearForMonth(month: Int, baseDate: LocalDate = LocalDate.now()): Int {
+        val currentYear = baseDate.year
+        return if (month >= 7) {
+            3999 + currentYear
+        } else {
+            4000 + currentYear
+        }
+    }
+
+    private fun isBeforeApproxBiblicalNewYear(date: LocalDate): Boolean {
+        // Approximate cutoff: biblical new year typically starts around late March/early April.
+        val cutoff = LocalDate.of(date.year, 3, 20)
+        return date.isBefore(cutoff)
     }
 
     suspend fun setAnchor(year: Int, month: Int, startDate: LocalDate) {
@@ -159,17 +168,19 @@ class LunarRepository(context: Context) {
         )
         
         // When a month is confirmed, recalculate projections for future months
-        // Remove stored projection for this month since it's now confirmed
+        // Remove stored projection for this newly confirmed month since it's now confirmed
         settings.setProjectedMonthLength(next.first, next.second, null)
         
-        // Recalculate projections for subsequent months
-        // This will happen automatically when getMonth is called, but we can trigger it here
-        // by getting the next projected month
-        val nextProjected = getMonth(next.first, next.second)
-        if (nextProjected != null && nextProjected.status == MonthStatus.PROJECTED) {
-            // Force recalculation by getting the month (which will call projectedLength)
-            getMonth(nextProjected.yearNumber, nextProjected.monthNumber)
-        }
+        // Calculate the length of the month that just ended (prev month)
+        // This is now confirmed since we know when the next month started
+        val prevMonthStart = prev.monthStart
+        val confirmedPrevLength = (startDate.toEpochDay() - prevMonthStart.toEpochDay()).toInt()
+        
+        // Cascade projections for all future months starting from the newly confirmed month
+        // The newly confirmed month's length determines the starting point for alternation
+        val nextAfterConfirmed = nextMonth(next.first, next.second)
+        val nextLength = if (confirmedPrevLength == 29) 30 else 29 // Alternate from the confirmed month's length
+        settings.cascadeProjectedMonthLengths(nextAfterConfirmed.first, nextAfterConfirmed.second, nextLength)
 
         return getMonth(next.first, next.second)
     }

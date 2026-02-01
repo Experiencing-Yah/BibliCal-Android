@@ -6,6 +6,9 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 object AppSchedulers {
@@ -17,7 +20,7 @@ object AppSchedulers {
             .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
             .build()
 
-        // Schedule daily tick worker (runs every 12 hours)
+        // Schedule daily tick worker (runs every 12 hours for prompts and reminders)
         val dailyRequest = PeriodicWorkRequestBuilder<DailyTickWorker>(12, TimeUnit.HOURS)
             .setConstraints(constraints)
             .build()
@@ -33,6 +36,12 @@ object AppSchedulers {
 
         WorkManager.getInstance(context)
             .enqueueUniquePeriodicWork(UNIQUE_WIDGET_UPDATE, ExistingPeriodicWorkPolicy.UPDATE, widgetRequest)
+
+        // Schedule sunset tick worker (runs at sunset to update notification with new biblical day)
+        // This uses a coroutine because it needs to read settings for location
+        CoroutineScope(Dispatchers.IO).launch {
+            SunsetTickWorker.scheduleNextSunsetTick(context)
+        }
     }
 }
 

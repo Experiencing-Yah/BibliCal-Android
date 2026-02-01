@@ -307,7 +307,14 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setProjectedMonthLength(year: Int, month: Int, length: Int?) {
         viewModelScope.launch {
-            settings.setProjectedMonthLength(year, month, length)
+            if (length != null) {
+                // When user manually sets a month length, cascade to all future months
+                // using alternating 29/30 pattern starting from this month
+                settings.cascadeProjectedMonthLengths(year, month, length)
+            } else {
+                // If removing a length, just remove this specific entry
+                settings.setProjectedMonthLength(year, month, null)
+            }
             load()
         }
     }

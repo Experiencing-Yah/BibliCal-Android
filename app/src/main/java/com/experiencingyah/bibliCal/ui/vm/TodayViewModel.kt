@@ -1,8 +1,10 @@
 package com.experiencingyah.bibliCal.ui.vm
 
 import android.app.Application
+import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.Location
+import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.experiencingyah.bibliCal.data.LunarRepository
@@ -11,6 +13,7 @@ import com.experiencingyah.bibliCal.domain.FeastDay
 import com.experiencingyah.bibliCal.domain.MonthStatus
 import com.experiencingyah.bibliCal.util.MonthNames
 import com.experiencingyah.bibliCal.util.SunsetCalculator
+import com.experiencingyah.bibliCal.widgets.WidgetHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -91,12 +94,14 @@ data class TodayUiState(
     val isLoading: Boolean = false,
     val isLoadingSunset: Boolean = false,
     val isLoadingFeasts: Boolean = false,
+    val showWidgetBanner: Boolean = false,
 )
 
 class TodayViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = LunarRepository(app)
     private val settings = SettingsRepository(app)
     private val geocoder = Geocoder(app)
+    private val appContext = app.applicationContext
 
     private val _state = MutableStateFlow(TodayUiState(isLoading = true))
     val state: StateFlow<TodayUiState> = _state.asStateFlow()
@@ -123,6 +128,8 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
             }
             // Refresh after attempting to load cached location
             refresh()
+            // Check widget banner state
+            updateWidgetBannerState()
         }
         
         // No need to update countdown every second - it's calculated dynamically in the UI
@@ -133,6 +140,47 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
             settings.showJerusalemTime.collect {
                 updateJerusalemTimeInfo()
             }
+        }
+    }
+    
+    private fun getAppVersionName(): String {
+        return try {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appContext.packageManager.getPackageInfo(
+                    appContext.packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                appContext.packageManager.getPackageInfo(appContext.packageName, 0)
+            }
+            packageInfo.versionName ?: "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
+    }
+    
+    private suspend fun updateWidgetBannerState() {
+        val hasWidgets = WidgetHelper.hasAnyWidgetInstalled(appContext)
+        if (hasWidgets) {
+            // User already has widgets, don't show banner
+            _state.value = _state.value.copy(showWidgetBanner = false)
+            return
+        }
+        
+        val dismissedVersion = settings.getWidgetBannerDismissedVersion()
+        val currentVersion = getAppVersionName()
+        
+        // Show banner if never dismissed OR dismissed for a different version
+        val shouldShow = dismissedVersion == null || dismissedVersion != currentVersion
+        _state.value = _state.value.copy(showWidgetBanner = shouldShow)
+    }
+    
+    fun dismissWidgetBanner() {
+        viewModelScope.launch {
+            val currentVersion = getAppVersionName()
+            settings.setWidgetBannerDismissedVersion(currentVersion)
+            _state.value = _state.value.copy(showWidgetBanner = false)
         }
     }
 
@@ -271,6 +319,7 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
                 upcomingFeasts = currentState.upcomingFeasts, // Preserve existing feasts
                 isLoadingSunset = currentState.isLoadingSunset,
                 isLoadingFeasts = currentState.isLoadingFeasts,
+                showWidgetBanner = currentState.showWidgetBanner, // Preserve widget banner state
             )
             
             // Always update state to ensure consistency - the comparison was causing issues

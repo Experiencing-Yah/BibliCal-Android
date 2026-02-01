@@ -5,15 +5,14 @@ import android.location.Location
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.experiencingyah.bibliCal.data.LunarRepository
+import com.experiencingyah.bibliCal.data.settings.SettingsRepository
 import com.experiencingyah.bibliCal.util.NewMoonCalculator
-import com.experiencingyah.bibliCal.util.SunsetCalculator
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-import java.time.ZoneId
-import java.time.ZonedDateTime
 
 enum class WelcomeStep {
     KNOW_BIBLICAL_DATE,
@@ -34,6 +33,7 @@ data class WelcomeUiState(
 
 class WelcomeViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = LunarRepository(app)
+    private val settings = SettingsRepository(app)
     
     private val _state = MutableStateFlow(WelcomeUiState())
     val state: StateFlow<WelcomeUiState> = _state.asStateFlow()
@@ -53,6 +53,11 @@ class WelcomeViewModel(app: Application) : AndroidViewModel(app) {
             location = location,
             isLoadingLocation = false
         )
+        if (location != null) {
+            viewModelScope.launch {
+                settings.cacheLocation(location.latitude, location.longitude)
+            }
+        }
         
         // If we have location and are on estimate step, calculate estimate
         if (location != null && _state.value.currentStep == WelcomeStep.ESTIMATE_FROM_LOCATION) {
@@ -112,35 +117,16 @@ class WelcomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     
-    fun setBiblicalDate(year: Int, month: Int, day: Int, referenceDate: LocalDate, location: Location? = null) {
-        viewModelScope.launch {
+    fun setBiblicalDate(
+        year: Int,
+        month: Int,
+        day: Int,
+        referenceDate: LocalDate,
+    ): Job {
+        return viewModelScope.launch {
             try {
-                // If we have location, check if it's after sunset
-                // The reference date represents which Gregorian date the biblical day corresponds to
-                var dateToUse = referenceDate
-                
-                if (location != null) {
-                    val now = ZonedDateTime.now(ZoneId.systemDefault())
-                    val todaySunset = SunsetCalculator.calculateSunsetTime(
-                        referenceDate, 
-                        location.latitude, 
-                        location.longitude, 
-                        ZoneId.systemDefault()
-                    )
-                    
-                    if (todaySunset != null && now.isAfter(todaySunset)) {
-                        // After sunset: the current biblical day started at sunset today
-                        // This biblical day corresponds to tomorrow's Gregorian date
-                        // So if user sets day X, it's day X of the biblical day that corresponds to tomorrow
-                        dateToUse = referenceDate.plusDays(1)
-                    } else {
-                        // Before sunset: the current biblical day corresponds to today's Gregorian date
-                        dateToUse = referenceDate
-                    }
-                }
-                
                 // Calculate month start: if day X occurs on dateToUse, month started (day-1) days earlier
-                val monthStart = dateToUse.minusDays((day - 1).toLong())
+                val monthStart = referenceDate.minusDays((day - 1).toLong())
                 repo.setAnchor(year = year, month = month, startDate = monthStart)
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
@@ -150,8 +136,8 @@ class WelcomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     
-    fun setNewMoonDate(newMoonDate: LocalDate, year: Int, month: Int) {
-        viewModelScope.launch {
+    fun setNewMoonDate(newMoonDate: LocalDate, year: Int, month: Int): Job {
+        return viewModelScope.launch {
             try {
                 // The newMoonDate represents when the first sliver was visible (during daytime)
                 // The first day of the month starts at sunset on that same date
@@ -167,11 +153,12 @@ class WelcomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     
-    fun useEstimatedDate(year: Int, month: Int, customDate: LocalDate? = null) {
+    fun useEstimatedDate(year: Int, month: Int, customDate: LocalDate? = null): Job? {
         val dateToUse = customDate ?: _state.value.estimatedNewMoonDate
         if (dateToUse != null) {
-            setNewMoonDate(dateToUse, year, month)
+            return setNewMoonDate(dateToUse, year, month)
         }
+        return null
     }
     
     fun clearError() {

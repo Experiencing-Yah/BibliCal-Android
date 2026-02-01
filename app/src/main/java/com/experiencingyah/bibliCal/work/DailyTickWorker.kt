@@ -6,22 +6,12 @@ import androidx.work.WorkerParameters
 import com.experiencingyah.bibliCal.data.LunarRepository
 import com.experiencingyah.bibliCal.data.settings.SettingsRepository
 import com.experiencingyah.bibliCal.notifications.Notifier
-import com.experiencingyah.bibliCal.util.MonthNames
 import com.experiencingyah.bibliCal.util.SunsetCalculator
-import com.experiencingyah.bibliCal.widgets.DateWidgetProvider
-import com.experiencingyah.bibliCal.widgets.ShabbatWidgetProvider
-import com.experiencingyah.bibliCal.widgets.CombinedWidgetProvider
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
-import com.google.android.gms.tasks.Tasks
 import kotlinx.coroutines.flow.first
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
-import java.time.temporal.ChronoUnit
-import java.util.concurrent.TimeUnit
 
 class DailyTickWorker(
     appContext: Context,
@@ -31,44 +21,10 @@ class DailyTickWorker(
         val repo = LunarRepository(applicationContext)
         val settings = SettingsRepository(applicationContext)
 
-        Notifier.ensureChannels(applicationContext)
-
-        // Get location (cached or default) to calculate sunset
-        val cachedLocation = settings.getCachedLocation()
-        val latitude = cachedLocation?.first ?: 40.0
-        val longitude = cachedLocation?.second ?: -74.0
+        // Use shared logic for status notification and widget updates
+        val today = StatusUpdater.updateStatusAndWidgets(applicationContext, repo, settings)
         
-        // Determine which Gregorian date to use for biblical calculation based on sunset
-        val now = ZonedDateTime.now(ZoneId.systemDefault())
-        val todayDate = now.toLocalDate()
-        val tomorrowDate = todayDate.plusDays(1)
-        
-        val zoneId = ZoneId.systemDefault()
-        val todaySunset = SunsetCalculator.calculateSunsetTime(todayDate, latitude, longitude, zoneId)
-        
-        // If after sunset, use tomorrow's date for biblical calculation (the new biblical day)
-        // If before sunset, use today's date for biblical calculation
-        val dateToUseForBiblical = if (todaySunset != null && now.isAfter(todaySunset)) {
-            tomorrowDate
-        } else {
-            todayDate
-        }
-        
-        val today = repo.resolveFor(dateToUseForBiblical)
         if (today != null) {
-            val namingMode = settings.monthNamingMode.first()
-            val label = "${MonthNames.format(today.monthNumber, namingMode)} ${today.dayOfMonth}, Year ${today.yearNumber}"
-
-            if (settings.statusNotificationEnabled.first()) {
-                Notifier.showOrUpdateStatus(applicationContext, today, label)
-            } else {
-                Notifier.cancelStatus(applicationContext)
-            }
-
-            DateWidgetProvider.updateAll(applicationContext)
-            ShabbatWidgetProvider.updateAll(applicationContext)
-            CombinedWidgetProvider.updateAll(applicationContext)
-
             if (settings.promptsEnabled.first()) {
                 maybePromptMoon(repo, settings, today)
                 maybePromptBarley(repo, settings, today)
@@ -86,22 +42,8 @@ class DailyTickWorker(
         val now = ZonedDateTime.now(ZoneId.systemDefault())
         val today = now.toLocalDate()
         
-        // Get user's location
-        val location = try {
-            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(applicationContext)
-            val cancellationTokenSource = CancellationTokenSource()
-            val locationTask = fusedLocationClient.getCurrentLocation(
-                Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-                cancellationTokenSource.token
-            )
-            Tasks.await(locationTask, 5, TimeUnit.SECONDS)
-        } catch (e: Exception) {
-            null
-        }
-        
-        // Use actual location or fallback to default coordinates (40.0, -74.0)
-        val latitude = location?.latitude ?: 40.0
-        val longitude = location?.longitude ?: -74.0
+        // Use cached location (or defaults) - no fresh location fetch in background
+        val (latitude, longitude) = StatusUpdater.getLocation(settings)
         
         // Find next Friday
         val daysUntilFriday = (DayOfWeek.FRIDAY.value - today.dayOfWeek.value + 7) % 7
