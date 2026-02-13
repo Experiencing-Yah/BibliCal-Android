@@ -18,8 +18,8 @@ android {
         applicationId = "com.experiencingyah.bibliCal"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.0.0"
+        versionCode = 7
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -54,6 +54,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
         }
     }
 

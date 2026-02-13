@@ -102,18 +102,39 @@ If you need an APK instead of an AAB, run:
 The APK will be created at:
 `app/build/outputs/apk/release/app-release.apk`
 
-## Step 4: Create GitHub Release
+## Step 4: Generate Release Notes
 
-1. Go to your GitHub repository
-2. Click "Releases" → "Create a new release"
+Release notes are generated from git commits. Use the pre-made template or generate from history:
+
+```bash
+# Commit messages since last tag (e.g. v0.2.0)
+git log v0.2.0..HEAD --pretty=format:"- %s (%h)" --reverse
+```
+
+A `RELEASE_NOTES_v1.1.md` template is included for each release — copy and customize as needed.
+
+## Step 5: Create GitHub Release
+
+1. **Commit and push** your changes, then create a tag:
+   ```bash
+   git tag v1.1
+   git push origin v1.1
+   ```
+
+2. Go to [GitHub Releases](https://github.com/Experiencing-Yah/BibliCal-Android/releases/new?tag=v1.1)
+
 3. Fill in:
-   - **Tag**: `v0.1.0` (or your version)
-   - **Title**: `BibliCal v0.1.0` (or your version name)
-   - **Description**: Add release notes
-4. **Attach the APK**: Drag and drop `app-release.apk` or click "attach binaries"
-5. Click "Publish release"
+   - **Tag**: `v1.1` (or your version — must match the tag you pushed)
+   - **Title**: `BibliCal v1.1`
+   - **Description**: Paste contents of `RELEASE_NOTES_v1.1.md` (or your release notes)
 
-## Step 5: Share with Testers
+4. **Attach artifacts**:
+   - `app/build/outputs/apk/release/app-release.apk` (for direct install)
+   - `app/build/outputs/bundle/release/app-release.aab` (for Play Store)
+
+5. Click **Publish release**
+
+## Step 6: Share with Testers
 
 Users can:
 1. Go to your GitHub Releases page

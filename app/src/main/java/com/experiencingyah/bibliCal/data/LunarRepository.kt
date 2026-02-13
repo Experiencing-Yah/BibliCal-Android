@@ -22,6 +22,13 @@ class LunarRepository(context: Context) {
 
     suspend fun hasAnyAnchor(): Boolean = dao.getAllMonthStarts().isNotEmpty()
 
+    suspend fun getMonthStartSummary(): MonthStartSummary {
+        val starts = dao.getAllMonthStarts().sortedBy { it.startEpochDay }
+        val earliest = starts.firstOrNull()?.let { LocalDate.ofEpochDay(it.startEpochDay) }
+        val latest = starts.lastOrNull()?.let { LocalDate.ofEpochDay(it.startEpochDay) }
+        return MonthStartSummary(count = starts.size, earliestStart = earliest, latestStart = latest)
+    }
+
     /**
      * Calculate default biblical year based on current Gregorian date.
      * Returns 4000 + current AD year if after biblical new year (Jan 1), or 3999 if before.
@@ -186,31 +193,32 @@ class LunarRepository(context: Context) {
     }
 
     suspend fun feastDaysForYear(year: Int): List<FeastDay> {
-        val month1 = getMonth(year, 1) ?: return emptyList()
+        val month1 = getMonth(year, 1)
         val includeHanukkah = settings.includeHanukkah.first()
         val includePurim = settings.includePurim.first()
 
-        fun atMonth1(day: Int, title: String): FeastDay {
-            val date = month1.startDate.plusDays((day - 1).toLong())
-            return FeastDay(title, date, year, 1, day)
-        }
-
-        // Firstfruits is always the day after the weekly Shabbat during Unleavened Bread (days 16-22)
-        // Find the first Saturday during days 16-22, then Firstfruits is the next day (Sunday)
-        val unleavenedBreadStart = month1.startDate.plusDays(14) // Day 15 (1-indexed)
-        val firstfruitsDate = (0..6).asSequence()
-            .map { unleavenedBreadStart.plusDays(it.toLong()) }
-            .firstOrNull { it.dayOfWeek == DayOfWeek.SATURDAY }
-            ?.plusDays(1) // Day after Shabbat
-            ?: unleavenedBreadStart.plusDays(1) // Fallback to day 16 if no Saturday found
-        val shavuotDate = firstfruitsDate.plusDays(49)
-
         val feasts = buildList {
-            add(atMonth1(14, "Passover (14/1)"))
-            add(atMonth1(15, "Unleavened Bread begins (15/1)"))
-            add(atMonth1(21, "Unleavened Bread ends (21/1)"))
-            add(FeastDay("Firstfruits", firstfruitsDate, year, 1, 0))
-            add(FeastDay("Shavuot (count +50)", shavuotDate, year, 0, 0))
+            if (month1 != null) {
+                fun atMonth1(day: Int, title: String): FeastDay {
+                    val date = month1.startDate.plusDays((day - 1).toLong())
+                    return FeastDay(title, date, year, 1, day)
+                }
+
+                add(atMonth1(14, "Passover (14/1)"))
+                add(atMonth1(15, "Unleavened Bread begins (15/1)"))
+                add(atMonth1(21, "Unleavened Bread ends (21/1)"))
+                // Firstfruits is always the day after the weekly Shabbat during Unleavened Bread (days 16-22)
+                val unleavenedBreadStart = month1.startDate.plusDays(14) // Day 15 (1-indexed)
+                val firstfruitsDate = (0..6).asSequence()
+                    .map { unleavenedBreadStart.plusDays(it.toLong()) }
+                    .firstOrNull { it.dayOfWeek == DayOfWeek.SATURDAY }
+                    ?.plusDays(1) // Day after Shabbat
+                    ?: unleavenedBreadStart.plusDays(1) // Fallback to day 16 if no Saturday found
+                val shavuotDate = firstfruitsDate.plusDays(49)
+                add(FeastDay("Firstfruits", firstfruitsDate, year, 1, 0))
+                add(FeastDay("Shavuot (count +50)", shavuotDate, year, 0, 0))
+            }
+
             // Fall feasts (assuming month 7 projected exists)
             getMonth(year, 7)?.let { m7 ->
                 add(FeastDay("Trumpets (1/7)", m7.startDate, year, 7, 1))
@@ -218,7 +226,7 @@ class LunarRepository(context: Context) {
                 add(FeastDay("Tabernacles begins (15/7)", m7.startDate.plusDays(14), year, 7, 15))
                 add(FeastDay("Tabernacles ends (22/7)", m7.startDate.plusDays(21), year, 7, 22))
             }
-            
+
             // Optional holidays
             if (includeHanukkah) {
                 getMonth(year, 9)?.let { m9 ->
@@ -226,16 +234,16 @@ class LunarRepository(context: Context) {
                     val hanukkahStart = m9.startDate.plusDays(24) // Day 25 (1-indexed)
                     for (i in 0..7) {
                         val dayNum = 25 + i
-                        val title = if (i == 0) "Hanukkah begins (25/9)" 
+                        val title = if (i == 0) "Hanukkah begins (25/9)"
                                    else if (i == 7) "Hanukkah ends (2/10)"
                                    else "Hanukkah (${dayNum}/9)"
                         add(FeastDay(title, hanukkahStart.plusDays(i.toLong()), year, 9, dayNum))
                     }
                 }
             }
-            
+
             if (includePurim) {
-                // Purim is on 14th of 12th month (Adar)
+                // Purim is on 14th of 12th month (Adar), even in leap years with a 13th month
                 getMonth(year, 12)?.let { m12 ->
                     val purimDate = m12.startDate.plusDays(13) // Day 14 (1-indexed)
                     add(FeastDay("Purim (14/12)", purimDate, year, 12, 14))
@@ -409,3 +417,8 @@ class LunarRepository(context: Context) {
     }
 }
 
+data class MonthStartSummary(
+    val count: Int,
+    val earliestStart: LocalDate?,
+    val latestStart: LocalDate?,
+)

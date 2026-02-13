@@ -72,6 +72,13 @@ fun CalendarScreen(vm: CalendarViewModel = viewModel()) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(state.title, style = MaterialTheme.typography.headlineSmall)
+        state.subtitle?.let { subtitle ->
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         
         Row(
             modifier = Modifier.fillMaxWidth(),

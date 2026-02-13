@@ -15,10 +15,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import android.util.Log
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -26,29 +26,46 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.experiencingyah.bibliCal.data.LunarRepository
 import com.experiencingyah.bibliCal.ui.screens.CalendarScreen
+import com.experiencingyah.bibliCal.ui.screens.PassagesIntegrationScreen
+import com.experiencingyah.bibliCal.ui.screens.PassagesRequest
 import com.experiencingyah.bibliCal.ui.screens.SettingsScreen
 import com.experiencingyah.bibliCal.ui.screens.TodayScreen
 import com.experiencingyah.bibliCal.ui.screens.WelcomeScreen
 import com.experiencingyah.bibliCal.ui.screens.WidgetShowcaseScreen
-import kotlinx.coroutines.launch
 
 @Composable
-fun BiblicalMonthAppRoot() {
+fun BiblicalMonthAppRoot(
+    passagesRequest: PassagesRequest?,
+    onSendToPassages: () -> Unit,
+    onPassagesDismissed: () -> Unit,
+) {
     val navController = rememberNavController()
     val backStack = navController.currentBackStackEntryAsState()
     val currentRoute = backStack.value?.destination?.route
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val repo = remember { LunarRepository(context) }
     
     var hasAnchor by remember { mutableStateOf<Boolean?>(null) }
     var startDestination by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(passagesRequest) {
+        Log.d("PassAges", "BiblicalMonthAppRoot passagesRequest=$passagesRequest")
+    }
     
     // Check if anchor exists on startup
     LaunchedEffect(Unit) {
         val anchorExists = repo.hasAnyAnchor()
         hasAnchor = anchorExists
         startDestination = if (anchorExists) "today" else "welcome"
+    }
+
+    if (passagesRequest != null) {
+        PassagesIntegrationScreen(
+            request = passagesRequest,
+            onSend = onSendToPassages,
+            onDismiss = onPassagesDismissed
+        )
+        return
     }
 
     val items = listOf(

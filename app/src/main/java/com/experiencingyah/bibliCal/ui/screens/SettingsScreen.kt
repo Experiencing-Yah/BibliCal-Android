@@ -1,8 +1,11 @@
 package com.experiencingyah.bibliCal.ui.screens
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
+import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -42,7 +45,7 @@ import com.experiencingyah.bibliCal.calendar.AllDayCalendarEvent
 import com.experiencingyah.bibliCal.calendar.CalendarExporter
 import com.experiencingyah.bibliCal.data.LunarRepository
 import com.experiencingyah.bibliCal.data.settings.SettingsRepository
-import com.experiencingyah.bibliCal.data.settings.MonthNamingMode
+import com.experiencingyah.bibliCal.integrations.PassagesIntegration
 import com.experiencingyah.bibliCal.ui.vm.SettingsViewModel
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
@@ -56,11 +59,11 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
     val state by vm.state.collectAsState()
     val settingsRepo = remember { SettingsRepository(context) }
 
-    var monthModeMenuOpen by remember { mutableStateOf(false) }
     var firstfruitsMenuOpen by remember { mutableStateOf(false) }
     var calendarMenuOpen by remember { mutableStateOf(false) }
     var calendars by remember { mutableStateOf(emptyList<com.experiencingyah.bibliCal.calendar.DeviceCalendar>()) }
     var exportStatus by remember { mutableStateOf<String?>(null) }
+    var passagesSyncStatus by remember { mutableStateOf<String?>(null) }
     
     // Track calendar permission state
     var hasCalendarPermission by remember { mutableStateOf(false) }
@@ -134,7 +137,7 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
                     Text("Grant notification permission", color = androidx.compose.ui.graphics.Color.White)
                 }
 
-                Divider()
+                HorizontalDivider()
 
                 // Prompts Section
                 Text("Prompts", style = MaterialTheme.typography.titleLarge)
@@ -150,35 +153,7 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
                     Switch(checked = state.promptsEnabled, onCheckedChange = { vm.setPromptsEnabled(it) })
                 }
 
-                Divider()
-
-                // Month Naming Section
-                Text("Month Naming", style = MaterialTheme.typography.titleLarge)
-                Button(onClick = { monthModeMenuOpen = true }) {
-                    val label = when (state.monthNamingMode) {
-                        MonthNamingMode.ORDINAL -> "Ordinal (First, Second, …)"
-                        MonthNamingMode.NUMBERED -> "Numbered (Month 1, Month 2, …)"
-                    }
-                    Text(label, color = androidx.compose.ui.graphics.Color.White)
-                }
-                DropdownMenu(expanded = monthModeMenuOpen, onDismissRequest = { monthModeMenuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Ordinal (First, Second, …)") },
-                        onClick = {
-                            vm.setMonthNamingMode(MonthNamingMode.ORDINAL)
-                            monthModeMenuOpen = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Numbered (Month 1, Month 2, …)") },
-                        onClick = {
-                            vm.setMonthNamingMode(MonthNamingMode.NUMBERED)
-                            monthModeMenuOpen = false
-                        }
-                    )
-                }
-
-                Divider()
+                HorizontalDivider()
 
                 // Optional Holidays Section
                 Text("Optional Holidays", style = MaterialTheme.typography.titleLarge)
@@ -205,7 +180,7 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
                     Switch(checked = state.includePurim, onCheckedChange = { vm.setIncludePurim(it) })
                 }
 
-                Divider()
+                HorizontalDivider()
 
                 // Jerusalem Time Section
                 Text("Jerusalem Time", style = MaterialTheme.typography.titleLarge)
@@ -221,7 +196,47 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
                     Switch(checked = state.showJerusalemTime, onCheckedChange = { vm.setShowJerusalemTime(it) })
                 }
 
-                Divider()
+                HorizontalDivider()
+
+                // PassAges Sync Section
+                Text("PassAges", style = MaterialTheme.typography.titleLarge)
+                Text("Send the current week to PassAges.", style = MaterialTheme.typography.bodySmall)
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        passagesSyncStatus = null
+                        scope.launch {
+                            val week = PassagesIntegration.getCurrentParshaWeekIndex(context)
+                            if (week == null) {
+                                passagesSyncStatus = "Unable to determine the current week."
+                                return@launch
+                            }
+                            val callbackUri = Uri.parse("passages://set-week?week=$week")
+                            val intent = Intent(Intent.ACTION_VIEW, callbackUri)
+                                .addCategory(Intent.CATEGORY_BROWSABLE)
+                            val pm = context.packageManager
+                            val resolved = intent.resolveActivity(pm)
+                            val matches = pm.queryIntentActivities(
+                                intent,
+                                PackageManager.MATCH_DEFAULT_ONLY
+                            )
+                            Log.d(
+                                "PassAges",
+                                "Sync intent: uri=$callbackUri resolved=$resolved matches=${matches.size}"
+                            )
+                            val canOpen = resolved != null || matches.isNotEmpty()
+                            if (canOpen) {
+                                context.startActivity(intent)
+                                passagesSyncStatus = "Sent week $week to PassAges."
+                            } else {
+                                passagesSyncStatus = "PassAges is not installed."
+                            }
+                        }
+                    }
+                ) { Text("Sync with PassAges", color = androidx.compose.ui.graphics.Color.White) }
+                passagesSyncStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+
+                HorizontalDivider()
 
                 // Date Adjustment Section
                 Text("Date Adjustment", style = MaterialTheme.typography.titleLarge)
@@ -250,7 +265,7 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
                     )
                 }
 
-                Divider()
+                HorizontalDivider()
 
                 // Calendar Export Section
                 Text("Calendar Export", style = MaterialTheme.typography.titleLarge)

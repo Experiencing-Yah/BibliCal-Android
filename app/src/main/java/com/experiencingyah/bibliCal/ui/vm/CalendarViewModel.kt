@@ -18,6 +18,8 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 data class DayCell(
     val gregorianDate: LocalDate,
@@ -184,7 +186,6 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
             val namingMode = settings.monthNamingMode.first()
             val projectExtraMonth = settings.projectExtraMonth.first()
             val title = "${MonthNames.format(month.monthNumber, namingMode)} Month — Year ${month.yearNumber}"
-            val subtitle = null // Removed projection text
 
             // Get projected month lengths for current year
             val projectedMonthsForYear = settings.getProjectedMonthsForYear(y)
@@ -208,6 +209,14 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
                 // If projecting extra month, treat year as having 13 months (keep original length)
                 // No adjustment needed here as it's handled in getMonth
             }
+
+            // Gregorian month range for subtitle (matching iOS)
+            val monthStart = adjustedMonth.startDate
+            val monthEnd = monthStart.plusDays((adjustedMonth.lengthDays - 1).toLong())
+            val monthFormatter = DateTimeFormatter.ofPattern("MMMM", Locale.getDefault())
+            val startMonthName = monthStart.format(monthFormatter)
+            val endMonthName = monthEnd.format(monthFormatter)
+            val subtitle = if (startMonthName == endMonthName) startMonthName else "$startMonthName - $endMonthName"
             
             // Get the projected length for the current month (from repository's prediction or user setting)
             // This will be used to set the checkbox state
@@ -217,12 +226,16 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
                 null
             }
 
-            val feasts = repo.feastDaysForYear(y)
+            var feasts = repo.feastDaysForYear(y)
+            // Fallback: when viewing month 12 with Purim enabled, ensure Purim is included
+            // (repository may omit it if month 1 is missing for that year)
+            if (m == 12 && settings.includePurim.first() && !feasts.any { it.title.contains("Purim") }) {
+                val purimDate = adjustedMonth.startDate.plusDays(13)
+                feasts = feasts + FeastDay("Purim (14/12)", purimDate, y, 12, 14)
+            }
             val feastByDate = feasts.groupBy { it.date }.mapValues { it.value.map(FeastDay::title) }
             
             // Filter feasts that fall within this month
-            val monthStart = adjustedMonth.startDate
-            val monthEnd = monthStart.plusDays((adjustedMonth.lengthDays - 1).toLong())
             val feastsInMonth = feasts.filter { it.date >= monthStart && it.date <= monthEnd }
                 .map { feast ->
                     // For feasts with dayOfMonth 0, calculate the actual day from the month start
